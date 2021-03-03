@@ -1,0 +1,9 @@
+__pycache__/
+.ipynb_checkpoints/
+.idea/
+runs
+*.sh
+plot.py
+plot_eval.py
+results/
+*.pdf
