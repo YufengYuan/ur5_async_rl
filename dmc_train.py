@@ -215,8 +215,7 @@ def main():
                     L.log('train_actor/entropy', entropy, step)
                     L.log('train_alpha/loss', alpha_loss, step)
                     L.log('train_alpha/value', alpha, step)
-                    L.log('train/step_update_ratio', num_updates * args.num_workers /\
-                          (step - args.init_steps + 1), step)
+                    L.log('train/step_update_ratio', num_updates / (step - args.init_steps + 1), step)
                     #print(num_updates, step)
 
             processes = []
