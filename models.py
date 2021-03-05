@@ -16,48 +16,75 @@ def weight_init(m):
 OUT_DIM = {2: 18, 4: 7, 6: 1}
 class EncoderModel(nn.Module):
     """Convolutional encoder of pixels observations."""
-    def __init__(self, obs_shape, feature_dim, num_layers=4, num_filters=32):
+    def __init__(self, obs_shape, latent_dim, num_layers=4, num_filters=32):
         super().__init__()
 
-        assert len(obs_shape) == 3
+        #assert len(obs_shape) == 3
 
-        self.feature_dim = feature_dim
+        self.latent_dim = latent_dim
         self.num_layers = num_layers
 
+        if type(obs_shape) is dict:
+            self.obs_shape = obs_shape['observation']
+            self.state_dim = obs_shape['proprioception'][0]
+            self.init_conv(obs_shape[0], num_layers, num_filters)
+            self.encoder_type = 'multimodal'
+            self.latent_dim += self.state_dim
+        elif len(obs_shape) == 3:
+            self.obs_shape = obs_shape
+            self.state_dim = 0
+            self.init_conv(obs_shape[0], num_layers, num_filters)
+            self.encoder_type = 'pixel'
+            self.latent_dim = latent_dim
+        elif len(obs_shape) == 1:
+            self.obs_shape = None
+            self.state_dim = obs_shape[0]
+            self.encoder_type = 'state'
+            self.latent_dim = obs_shape[0]
+
+
+    def init_conv(self, in_channels, num_layers, num_filters):
         self.convs = nn.ModuleList(
-            [nn.Conv2d(obs_shape[0], num_filters, 3, stride=2)]
+            [nn.Conv2d(in_channels, num_filters, 3, stride=2)]
         )
         for i in range(num_layers - 2):
             self.convs.append(nn.Conv2d(num_filters, num_filters, 3, stride=2))
-
         self.convs.append(nn.Conv2d(num_filters, num_filters, 3, stride=1))
 
         out_dim = OUT_DIM[num_layers]
-        self.out_dim = num_filters * out_dim * out_dim
-        self.fc = nn.Linear(num_filters * out_dim * out_dim, self.feature_dim)
-        self.ln = nn.LayerNorm(self.feature_dim)
-        self.outputs = dict()
+        self.fc = nn.Linear(num_filters * out_dim * out_dim, self.latent_dim)
+        self.ln = nn.LayerNorm(self.latent_dim)
+        #self.outputs = dict()
         self.apply(weight_init)
 
-    def reparameterize(self, mu, logstd):
-        std = torch.exp(logstd)
-        eps = torch.randn_like(std)
-        return mu + eps * std
-
-    def forward(self, obs):
+    def forward_conv(self, obs):
         obs = obs / 255.
-        self.outputs['obs'] = obs
-
         conv = torch.relu(self.convs[0](obs))
-        self.outputs['conv1'] = conv
-
         for i in range(1, self.num_layers):
             conv = torch.relu(self.convs[i](conv))
-            self.outputs['conv%s' % (i + 1)] = conv
-
         h = conv.view(conv.size(0), -1)
         return h
 
+    def forward(self, obs, detach=False):
+        if self.encoder_type == 'state':
+            return obs
+        elif self.encoder_type == 'pixel':
+            h = self.forward_conv(obs)
+            if detach:
+                h = h.detach()
+            h_fc = self.fc(h)
+            h_norm = self.ln(h_fc)
+            out = torch.tanh(h_norm)
+            return out
+        elif self.encoder_type == 'multimodal':
+            h = self.forward_conv(obs['observation'])
+            if detach:
+                h = h.detach()
+            h_fc = self.fc(h)
+            h_norm = self.ln(h_fc)
+            out = torch.tanh(h_norm)
+            out = torch.cat([out, obs['proprieception']], dim=-1)
+            return out
 
 def gaussian_logprob(noise, log_std):
     """Compute Gaussian log probability."""
@@ -80,22 +107,17 @@ def squash(mu, pi, log_pi):
 class ActorModel(nn.Module):
     """MLP actor network."""
     def __init__(
-        self, encoder, action_dim, latent_dim=50, hidden_dim=1024, log_std_min=-10, log_std_max=2
+        self, obs_shape, action_dim, latent_dim=50, hidden_dim=1024, log_std_min=-10, log_std_max=2
     ):
         super().__init__()
 
-        self.encoder = encoder
+        self.encoder = EncoderModel(obs_shape, latent_dim)
 
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
 
-        self.conv2latent = nn.Sequential(
-            nn.Linear(encoder.out_dim, latent_dim),
-            nn.LayerNorm(latent_dim), nn.Tanh(),
-        )
-
         self.trunk = nn.Sequential(
-            nn.Linear(latent_dim, hidden_dim), nn.ReLU(),
+            nn.Linear(self.encoder.latent_dim, hidden_dim), nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim), nn.ReLU(),
             nn.Linear(hidden_dim, 2 * action_dim)
         )
@@ -106,14 +128,9 @@ class ActorModel(nn.Module):
     def forward(
         self, obs, compute_pi=True, compute_log_pi=True, detach_encoder=False
     ):
-        if detach_encoder:
-            latent = self.encoder(obs).detach()
-        else:
-            latent = self.encoder(obs)
-        latent = self.conv2latent(latent)
-        #obs = self.encoder(obs, detach=detach_encoder)
+        obs = self.encoder(obs, detach=detach_encoder)
 
-        mu, log_std = self.trunk(latent).chunk(2, dim=-1)
+        mu, log_std = self.trunk(obs).chunk(2, dim=-1)
 
         # constrain log_std inside [log_std_min, log_std_max]
         log_std = torch.tanh(log_std)
@@ -161,21 +178,17 @@ class QFunction(nn.Module):
 class CriticModel(nn.Module):
     """Critic network, employes two q-functions."""
     def __init__(
-        self, encoder, action_dim, latent_dim=50, hidden_dim=1024
+        self, obs_shape, action_dim, latent_dim=50, hidden_dim=1024
     ):
         super().__init__()
 
-        self.encoder = encoder
+        self.encoder = EncoderModel(obs_shape, latent_dim)
 
-        self.conv2latent = nn.Sequential(
-            nn.Linear(encoder.out_dim, latent_dim),
-            nn.LayerNorm(latent_dim), nn.Tanh(),
-        )
         self.Q1 = QFunction(
-            latent_dim, action_dim, hidden_dim
+            self.encoder.latent_dim, action_dim, hidden_dim
         )
         self.Q2 = QFunction(
-            latent_dim, action_dim, hidden_dim
+            self.encoder.latent_dim, action_dim, hidden_dim
         )
 
         self.outputs = dict()
@@ -183,15 +196,10 @@ class CriticModel(nn.Module):
 
     def forward(self, obs, action, detach_encoder=False):
         # detach_encoder allows to stop gradient propogation to encoder
-        if detach_encoder:
-            latent = self.encoder(obs).detach()
-        else:
-            latent = self.encoder(obs)
+        obs = self.encoder(obs, detach=detach_encoder)
 
-        latent = self.conv2latent(latent)
-
-        q1 = self.Q1(latent, action)
-        q2 = self.Q2(latent, action)
+        q1 = self.Q1(obs, action)
+        q2 = self.Q2(obs, action)
 
         self.outputs['q1'] = q1
         self.outputs['q2'] = q2

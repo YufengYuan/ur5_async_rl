@@ -54,13 +54,16 @@ class SacRadAgent:
 
         self.action_dim = action_shape[0]
         # nn models
-        self.encoder = EncoderModel(obs_shape, self.rl_latent_dim).to(device)
+        #self.encoder = EncoderModel(obs_shape, self.rl_latent_dim).to(device)
 
-        self.actor = ActorModel(self.encoder, action_shape[0]).to(device)
+        self.actor = ActorModel(obs_shape, action_shape[0], rl_latent_dim).to(device)
 
-        self.critic = CriticModel(self.encoder, action_shape[0]).to(device)
+        self.critic = CriticModel(obs_shape, action_shape[0], rl_latent_dim).to(device)
 
         self.critic_target = copy.deepcopy(self.critic) # also copies the encoder instance
+
+        if hasattr(self.actor.encoder, 'convs'):
+            self.actor.encoder.convs = self.critic.encoder.convs
 
         self.log_alpha = torch.tensor(np.log(init_temperature)).to(device)
         self.log_alpha.requires_grad = True
@@ -244,10 +247,10 @@ class SacRadAgent:
         utils.soft_update_params(
             self.critic.Q2, self.critic_target.Q2, self.critic_tau
         )
-        utils.soft_update_params(
-            self.critic.conv2latent, self.critic_target.conv2latent,
-            self.encoder_tau
-        )
+        #utils.soft_update_params(
+        #    self.critic.conv2latent, self.critic_target.conv2latent,
+        #    self.encoder_tau
+        #)
         utils.soft_update_params(
             self.critic.encoder, self.critic_target.encoder,
             self.encoder_tau
