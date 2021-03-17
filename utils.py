@@ -200,12 +200,20 @@ class ReplayBuffer(object):
         idxs = np.random.randint(
             0, self.capacity if self.full else self.idx, size=self.batch_size
         )
-        obses = self.obses[idxs]
-        states = self.states[idxs]
+        if self.ignore_obs:
+            obses = None
+            next_obses = None
+        else:
+            obses = self.obses[idxs]
+            next_obses = self.next_obses[idxs]
+        if self.ignore_state:
+            states = None
+            next_states = None
+        else:
+            states = self.states[idxs]
+            next_states = self.next_states[idxs]
         actions = self.actions[idxs]
         rewards = self.rewards[idxs]
-        next_obses = self.next_obses[idxs]
-        next_states = self.next_states[idxs]
         not_dones = self.not_dones[idxs]
         return obses, states, actions, rewards, next_obses, next_states, not_dones
 

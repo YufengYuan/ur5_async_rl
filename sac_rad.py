@@ -224,7 +224,7 @@ class SacRadAgent:
     def async_data_augment(input_queue, output_queue, device):
         # asynchronously augment data and convert it to tensor on another process
         while True:
-            obs, action, reward, next_obs, not_done = input_queue.get()
+            obs, state, action, reward, next_obs, next_state, not_done = input_queue.get()
             if type(obs) is dict:
                 pass
             elif len(obs.shape) == 4:
@@ -235,19 +235,19 @@ class SacRadAgent:
             reward = torch.as_tensor(reward, device=device)
             next_obs = torch.as_tensor(next_obs, device=device).float()
             not_done = torch.as_tensor(not_done, device=device)
-            output_queue.put(obs, action, reward, next_obs, not_done)
+            output_queue.put(obs, state, action, reward, next_obs, next_state, not_done)
 
     @staticmethod
     def async_update(agent, tensor_queue, output_quque):
         # asynchronously update actor critic on another process
         while True:
-            obs, action, reward, next_obs, not_done = tensor_queue.get()
+            obs, state, action, reward, next_obs, next_state, not_done = tensor_queue.get()
 
-            critic_loss = agent.update_critic(obs, action, reward, next_obs, not_done)
+            critic_loss = agent.update_critic(obs, state, action, reward, next_obs, next_state, not_done)
 
             if agent.num_updates % agent.actor_update_freq == 0:
                 actor_loss, target_entropy, entropy, \
-                alpha_loss, alpha =agent.update_actor_and_alpha(obs)
+                alpha_loss, alpha =agent.update_actor_and_alpha(obs, state)
             if agent.num_updates % agent.critic_target_update_freq == 0:
                 agent.soft_update_target()
             # return training statistics to main process

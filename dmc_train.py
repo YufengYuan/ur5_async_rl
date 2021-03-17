@@ -207,9 +207,9 @@ def main():
         # run training update
         if args.async and step == args.init_steps:
             agent.share_memory()
-            input_queue = BufferQueue(5, 10)
+            input_queue = BufferQueue(7, 10)
             output_queue = BufferQueue(8, 10)
-            tensor_queue = utils.BufferQueue(5, 10)
+            tensor_queue = utils.BufferQueue(7, 10)
             # easily transfer step information to 'async_recv_data'
             def async_send_data(replay_buffer, buffer_queue, stop):
                 while True:
