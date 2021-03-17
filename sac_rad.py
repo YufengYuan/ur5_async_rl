@@ -16,9 +16,11 @@ class SacRadAgent:
     def __init__(
         self,
         obs_shape,
+        state_shape,
         action_shape,
         device,
         training_steps,
+        net_params,
         discount=0.99,
         init_temperature=0.1,
         alpha_lr=1e-3,
@@ -43,10 +45,11 @@ class SacRadAgent:
         self.training_steps = training_steps
 
         # modify obs_shape when rad_offset is used
-        obs_shape = list(obs_shape)
-        obs_shape[1] -= 2 * rad_offset
-        obs_shape[2] -= 2 * rad_offset
-        obs_shape = tuple(obs_shape)
+        if len(obs_shape) == 3:
+            obs_shape = list(obs_shape)
+            obs_shape[1] -= 2 * rad_offset
+            obs_shape[2] -= 2 * rad_offset
+            obs_shape = tuple(obs_shape)
 
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
@@ -56,9 +59,9 @@ class SacRadAgent:
         # nn models
         #self.encoder = EncoderModel(obs_shape, self.rl_latent_dim).to(device)
 
-        self.actor = ActorModel(obs_shape, action_shape[0], rl_latent_dim).to(device)
+        self.actor = ActorModel(obs_shape, state_shape, action_shape[0], net_params).to(device)
 
-        self.critic = CriticModel(obs_shape, action_shape[0], rl_latent_dim).to(device)
+        self.critic = CriticModel(obs_shape, state_shape, action_shape[0], net_params).to(device)
 
         self.critic_target = copy.deepcopy(self.critic) # also copies the encoder instance
 
@@ -108,36 +111,51 @@ class SacRadAgent:
     def alpha(self):
         return self.log_alpha.exp()
 
-    def select_action(self, obs):
+    def select_action(self, obs, state):
+        if obs is not None:
+            c, h, w = obs.shape
+            obs = obs[:, self.rad_offset: h - self.rad_offset, self.rad_offset: w - self.rad_offset]
+
         with torch.no_grad():
-            obs = torch.FloatTensor(obs).to(self.device)
-            obs = obs.unsqueeze(0)
+            if obs is not None:
+                obs = torch.FloatTensor(obs).to(self.device)
+                obs = obs.unsqueeze(0)
+            if state is not None:
+                state = torch.FloatTensor(state).to(self.device)
+                state = state.unsqueeze(0)
             mu, _, _, _ = self.actor(
-                obs, compute_pi=False, compute_log_pi=False
+                obs, state,  compute_pi=False, compute_log_pi=False
             )
             return mu.cpu().data.numpy().flatten()
 
-    def sample_action(self, obs):
-        #for param in self.critic.parameters():
-        #    print(param[0, 0, 0])
-        #    break
+    def sample_action(self, obs, state):
+        if obs is not None:
+            c, h, w = obs.shape
+            obs = obs[:, self.rad_offset: h - self.rad_offset, self.rad_offset: w - self.rad_offset]
+
         with torch.no_grad():
-            obs = torch.FloatTensor(obs).to(self.device)
-            obs = obs.unsqueeze(0)
-            mu, pi, _, _ = self.actor(obs, compute_log_pi=False)
+            if obs is not None:
+                obs = torch.FloatTensor(obs).to(self.device)
+                obs = obs.unsqueeze(0)
+            if state is not None:
+                state = torch.FloatTensor(state).to(self.device)
+                state = state.unsqueeze(0)
+            mu, pi, _, _ = self.actor(
+                obs, state,  compute_pi=True, compute_log_pi=False
+            )
             return pi.cpu().data.numpy().flatten()
 
-    def update_critic(self, obs, action, reward, next_obs, not_done, L=None, step=None):
+    def update_critic(self, obs, state, action, reward, next_obs, next_state, not_done, L=None, step=None):
         with torch.no_grad():
-            _, policy_action, log_pi, _ = self.actor(next_obs)
-            target_Q1, target_Q2 = self.critic_target(next_obs, policy_action)
+            _, policy_action, log_pi, _ = self.actor(next_obs, next_state)
+            target_Q1, target_Q2 = self.critic_target(next_obs, next_state, policy_action)
             target_V = torch.min(target_Q1, target_Q2) \
                        - self.alpha.detach() * log_pi
             target_Q = reward + (not_done * self.discount * target_V)
             #target_Q = 0
 
         # get current Q estimates
-        current_Q1, current_Q2 = self.critic(obs, action, detach_encoder=False)
+        current_Q1, current_Q2 = self.critic(obs, state, action, detach_encoder=False)
 
         # Ignore terminal transitions to enable infinite bootstrap
         # TODO: disable infinite bootstrap in environments other than DM_control
@@ -154,10 +172,10 @@ class SacRadAgent:
 
         return critic_loss.item()
 
-    def update_actor_and_alpha(self, obs, L=None, step=None):
+    def update_actor_and_alpha(self, obs, state, L=None, step=None):
         # detach encoder, so we don't update it with the actor loss
-        _, pi, log_pi, log_std = self.actor(obs, detach_encoder=True)
-        actor_Q1, actor_Q2 = self.critic(obs, pi, detach_encoder=True)
+        _, pi, log_pi, log_std = self.actor(obs, state ,detach_encoder=True)
+        actor_Q1, actor_Q2 = self.critic(obs, state, pi, detach_encoder=True)
 
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = (self.alpha.detach() * log_pi - actor_Q).mean()
@@ -190,25 +208,28 @@ class SacRadAgent:
 
     def update(self, replay_buffer, L=None, step=None):
         # regular update of SAC_RAD, sequentially augment data and train
-        obs, action, reward, next_obs, not_done = replay_buffer.sample()
-        obs = random_augment(obs)
-        next_obs = random_augment(next_obs)
+        obs, state, action, reward, next_obs, next_state, not_done = replay_buffer.sample()
+        if obs is not None:
+            obs = random_augment(obs)
+            next_obs = random_augment(next_obs)
         L.log('train/batch_reward', reward.mean(), step)
-
-        self.update_critic(obs, action, reward, next_obs, not_done, L, step)
+        self.update_critic(obs, state, action, reward, next_obs, next_state, not_done, L, step)
         if step % self.actor_update_freq == 0:
-            self.update_actor_and_alpha(obs, L, step)
-
+            self.update_actor_and_alpha(obs, state, L, step)
         if step % self.critic_target_update_freq == 0:
             self.soft_update_target()
 
+    # TODO: modify asynchronous augmnentation and update for multimodal observations
     @staticmethod
     def async_data_augment(input_queue, output_queue, device):
         # asynchronously augment data and convert it to tensor on another process
         while True:
             obs, action, reward, next_obs, not_done = input_queue.get()
-            obs = utils.random_augment(obs, numpy=True)
-            next_obs = utils.random_augment(next_obs, numpy=True)
+            if type(obs) is dict:
+                pass
+            elif len(obs.shape) == 4:
+                obs = utils.random_augment(obs, numpy=True)
+                next_obs = utils.random_augment(next_obs, numpy=True)
             obs = torch.as_tensor(obs, device=device).float()
             action = torch.as_tensor(action, device=device)
             reward = torch.as_tensor(reward, device=device)

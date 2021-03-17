@@ -19,12 +19,15 @@ import torch.multiprocessing as mp
 from utils import BufferQueue
 import multiprocessing
 from utils import evaluate
+from envs.dmc_wrapper import DMCEnv
+from configs.dmc_config import config
 
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
     parser.add_argument('--domain_name', default='reacher')
     parser.add_argument('--task_name', default='easy')
+    parser.add_argument('--env', default='reacher_easy_state')
     parser.add_argument('--image_size', default=84, type=int)
     parser.add_argument('--action_repeat', default=4, type=int)
     parser.add_argument('--frame_stack', default=3, type=int)
@@ -67,6 +70,7 @@ def parse_args():
     parser.add_argument('--save_video', default=False, action='store_true')
     parser.add_argument('--device', default='', type=str)
     parser.add_argument('--async', default=False, action='store_true')
+    parser.add_argument('--desc', default='', type=str)
     args = parser.parse_args()
     return args
 
@@ -75,17 +79,25 @@ def main():
     args = parse_args()
     utils.set_seed_everywhere(args.seed)
 
-    env = dmc2gym.make(
-        domain_name=args.domain_name,
-        task_name=args.task_name,
+    #env = dmc2gym.make(
+    #    domain_name=args.domain_name,
+    #    task_name=args.task_name,
+    #    seed=args.seed,
+    #    visualize_reward=False,
+    #    from_pixels=True,
+    #    height=args.image_size + 2 * args.rad_offset,
+    #    width=args.image_size + 2 * args.rad_offset,
+    #    frame_skip=args.action_repeat
+    #)
+    #env = utils.FrameStack(env, k=args.frame_stack)
+    env = DMCEnv(
+        name=args.env,
         seed=args.seed,
-        visualize_reward=False,
-        from_pixels=True,
-        height=args.image_size + 2 * args.rad_offset,
-        width=args.image_size + 2 * args.rad_offset,
+        image_height=args.image_size + 2 * args.rad_offset,
+        image_width=args.image_size + 2 * args.rad_offset,
+        frame_stack=args.frame_stack,
         frame_skip=args.action_repeat
     )
-    env = utils.FrameStack(env, k=args.frame_stack)
     eval_env = dmc2gym.make(
         domain_name=args.domain_name,
         task_name=args.task_name,
@@ -99,8 +111,9 @@ def main():
     #eval_env.seed(args.seed + 100)
     eval_env = utils.FrameStack(eval_env, k=args.frame_stack)
 
-    mode = 'async' if args.async else 'sync'
-    args.work_dir = f'results/sac_{mode}_{args.domain_name}_{args.task_name}_{args.seed}/'
+    #mode = 'async' if args.async else 'sync'
+    #args.work_dir = f'results/sac_{args.desc}_{args.domain_name}_{args.task_name}_{args.seed}/'
+    args.work_dir = f'results/sac_{args.desc}_{args.env}_{args.seed}/'
     utils.make_dir(args.work_dir)
     #video_dir = utils.make_dir(os.path.join(args.work_dir, 'video'))
     model_dir = utils.make_dir(os.path.join(args.work_dir, 'model'))
@@ -120,6 +133,7 @@ def main():
 
     replay_buffer = utils.ReplayBuffer(
         obs_shape=env.observation_space.shape,
+        state_shape=env.state_space.shape,
         action_shape=env.action_space.shape,
         capacity=args.replay_buffer_capacity,
         batch_size=args.batch_size,
@@ -128,9 +142,11 @@ def main():
 
     agent = SacRadAgent(
         obs_shape=env.observation_space.shape,
+        state_shape=env.state_space.shape,
         action_shape=env.action_space.shape,
         device=device,
         training_steps=args.env_steps // args.action_repeat,
+        net_params=config,
         discount=args.discount,
         init_temperature=args.init_temperature,
         alpha_lr=args.alpha_lr,
@@ -141,7 +157,7 @@ def main():
         critic_target_update_freq=args.critic_target_update_freq,
         rl_latent_dim=args.latent_dim,
         encoder_tau=args.encoder_tau,
-        rad_offset=args.rad_offset
+        rad_offset=args.rad_offset,
     )
 
     L = Logger(args.work_dir, use_tb=args.save_tb)
@@ -157,6 +173,7 @@ def main():
                 L.dump(step)
 
             # evaluate agent periodically
+            # TODO: modify evaluation function to enable evaluation for multimodal observations
             if step % args.eval_freq == 0 and not args.no_eval:
                 L.log('eval/episode', episode, step)
                 evaluate(eval_env, agent, args.num_eval_episodes, L, step, args)
@@ -167,7 +184,7 @@ def main():
 
             L.log('train/episode_reward', episode_reward, step)
 
-            obs = env.reset()
+            obs, state = env.reset()
             done = False
             episode_reward = 0
             episode_step = 0
@@ -180,10 +197,11 @@ def main():
             action = env.action_space.sample()
         else:
             with utils.eval_mode(agent):
-                action = agent.sample_action(
-                    obs[:, args.rad_offset: args.image_size + args.rad_offset,
-                        args.rad_offset: args.image_size + args.rad_offset]
-                )
+                action = agent.sample_action(obs, state)
+                #action = agent.sample_action(
+                #    obs[:, args.rad_offset: args.image_size + args.rad_offset,
+                #        args.rad_offset: args.image_size + args.rad_offset]
+                #)
 
 
         # run training update
@@ -244,11 +262,13 @@ def main():
         elif not args.async and step >= args.init_steps:
             agent.update(replay_buffer, L, step)
         # step in the environment
-        next_obs, reward, done, _ = env.step(action)
-        done_bool = episode_step >= env._max_episode_steps or done
+        next_obs, next_state, reward, done, _ = env.step(action)
+        #done_bool = episode_step >= env._max_episode_steps or done
+        done_bool = done
         episode_reward += reward
-        replay_buffer.add(obs, action, reward, next_obs, done_bool)
+        replay_buffer.add(obs, state, action, reward, next_obs, next_state, done_bool)
         obs = next_obs
+        state = next_state
         episode_step += 1
 
         # Terminate all threads and processes once done
