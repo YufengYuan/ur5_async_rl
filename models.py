@@ -16,23 +16,69 @@ def weight_init(m):
 def conv_out_size(input_size, kernel_size, stride, padding=0):
     return ((input_size - kernel_size + 2 * padding) // stride) + 1
 
+from torch.nn import Parameter
+class SpatialSoftmax(torch.nn.Module):
+    def __init__(self, height, width, channel, temperature=None, data_format='NCHW'):
+        super(SpatialSoftmax, self).__init__()
+        self.data_format = data_format
+        self.height = height
+        self.width = width
+        self.channel = channel
 
+        if temperature:
+            self.temperature = Parameter(torch.ones(1)*temperature)
+        else:
+            self.temperature = 1.
+
+        pos_x, pos_y = np.meshgrid(
+                np.linspace(-1., 1., self.height),
+                np.linspace(-1., 1., self.width)
+                )
+        pos_x = torch.from_numpy(pos_x.reshape(self.height*self.width)).float()
+        pos_y = torch.from_numpy(pos_y.reshape(self.height*self.width)).float()
+        self.register_buffer('pos_x', pos_x)
+        self.register_buffer('pos_y', pos_y)
+
+    def forward(self, feature):
+        # Output:
+        #   (N, C*2) x_0 y_0 ...
+        if self.data_format == 'NHWC':
+            feature = feature.transpose(1, 3).tranpose(2, 3).view(-1, self.height*self.width)
+        else:
+            feature = feature.contiguous().view(-1, self.height*self.width)
+
+        softmax_attention = F.softmax(feature/self.temperature, dim=-1)
+        expected_x = torch.sum(self.pos_x*softmax_attention, dim=1, keepdim=True)
+        expected_y = torch.sum(self.pos_y*softmax_attention, dim=1, keepdim=True)
+        expected_xy = torch.cat([expected_x, expected_y], 1)
+        feature_keypoints = expected_xy.view(-1, self.channel*2)
+
+        return feature_keypoints
+
+
+# TODO: enable configuring spatialsoftmax and dense connections
 class EncoderModel(nn.Module):
     """Convolutional encoder of pixels observations."""
-    def __init__(self, obs_shape, state_shape, net_params):
+    def __init__(self, obs_shape, state_shape, net_params, spatial_softmax=True):
         super().__init__()
 
         if obs_shape[-1] != 0 and state_shape[-1] != 0:
             self.encoder_type = 'multi'
             self.init_conv(obs_shape, net_params)
-            self.latent_dim = net_params['latent'] + state_shape[0]
+            if spatial_softmax:
+                self.latent_dim = net_params['conv'][-1][1] * 2 + state_shape[0]
+            else:
+                self.latent_dim = net_params['latent'] + state_shape[0]
         elif obs_shape[-1] == 0:
             self.encoder_type = 'state'
             self.latent_dim = state_shape[0]
         elif state_shape[-1] == 0:
             self.encoder_type = 'pixel'
             self.init_conv(obs_shape, net_params)
-            self.latent_dim = net_params['latent']
+            if spatial_softmax:
+                self.latent_dim = net_params['conv'][-1][1] * 2
+            else:
+                self.latent_dim = net_params['latent']
         else:
             raise NotImplementedError('Invalid observation space and state space')
 
@@ -52,11 +98,27 @@ class EncoderModel(nn.Module):
         self.convs = nn.Sequential(
             *layers
         )
-
+        self.ss = SpatialSoftmax(height, width, conv_params[-1][1])
         self.fc = nn.Linear(conv_params[-1][1] * width * height, latent_dim)
         self.ln = nn.LayerNorm(latent_dim)
         #self.outputs = dict()
         self.apply(weight_init)
+
+    def forward(self, obs, state, detach=False):
+        if self.encoder_type == 'state':
+            return state
+        elif self.encoder_type == 'pixel':
+            h = self.ss(self.convs(obs))
+            if detach:
+                h = h.detach()
+            return h
+        elif self.encoder_type == 'multi':
+            h = self.ss(self.convs(obs))
+            if detach:
+                h = h.detach()
+            out = torch.cat([h, state], dim=-1)
+            return out
+
 
     def forward_conv(self, obs):
         obs = obs / 255.
@@ -64,7 +126,8 @@ class EncoderModel(nn.Module):
         h = conv.view(conv.size(0), -1)
         return h
 
-    def forward(self, obs, state, detach=False):
+    # TODO: temporally disable this to enable spatial softmax, merge them later
+    def _forward(self, obs, state, detach=False):
         if self.encoder_type == 'state':
             return state
         elif self.encoder_type == 'pixel':

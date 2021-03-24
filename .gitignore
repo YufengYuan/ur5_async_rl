@@ -8,3 +8,4 @@ plot_eval.py
 results/
 *.pdf
 img_training.png
+*_test.py

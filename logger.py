@@ -15,7 +15,7 @@ FORMAT_CONFIG = {
             ('duration', 'D', 'time'), ('episode_reward', 'R', 'float'),
             ('batch_reward', 'BR', 'float'), ('actor_loss', 'ALOSS', 'float'),
             ('entropy', 'ENT', 'float'),
-            ('critic_loss', 'CLOSS', 'float'), ('step_update_ratio', 'RATIO', 'float')
+            ('critic_loss', 'CLOSS', 'float'), ('num_updates', 'NUM', 'int')
         ],
         'eval': [('step', 'S', 'int'), ('episode_reward', 'ER', 'float')]
     }

@@ -22,6 +22,8 @@ from utils import evaluate
 from envs.dmc_wrapper import DMCEnv
 from configs.dmc_config import config
 
+# TODO: temporally disabled due to compatibility issues with UR5 setup
+
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
@@ -239,7 +241,8 @@ def main():
             processes = []
             threads = []
             # initialize data augmentation process
-            p_augment = mp.Process(target=SacRadAgent.async_data_augment, args=(input_queue, tensor_queue, agent.device))
+            #p_augment = mp.Process(target=SacRadAgent.async_data_augment, args=(agent, input_queue, tensor_queue))
+            p_augment = mp.Process(target=SacRadAgent.async_data_augment, args=(input_queue, tensor_queue, agent))
             processes.append(p_augment)
             p_augment.start()
             # initialize SAC update process

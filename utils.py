@@ -67,21 +67,23 @@ def preprocess_obs(obs, bits=5):
     obs = obs - 0.5
     return obs
 
-def random_augment(obses, size=84, numpy=False):
+def random_augment(obses, offset=(4,4), numpy=False):
     n, c, h, w = obses.shape
+    _h = h - 2*offset[0]
+    _w = w - 2*offset[1]
     if not numpy:
-        w1 = torch.randint(0, w - size + 1, (n,))
-        h1 = torch.randint(0, h - size + 1, (n,))
-        cropped_obses = torch.empty((n, c, size, size), device=obses.device).float()
+        w1 = torch.randint(0,  + 1, (n,))
+        h1 = torch.randint(0,  + 1, (n,))
+        cropped_obses = torch.empty((n, c, _h, _w), device=obses.device).float()
         for i, (obs, w11, h11) in enumerate(zip(obses, w1, h1)):
-            cropped_obses[i][:] = obs[:, h11:h11 + size, w11:w11 + size]
+            cropped_obses[i][:] = obs[:, h11:h11 + _h, w11:w11 + _w]
         return cropped_obses
     else:
-        w1 = np.random.randint(0, w - size + 1, (n,))
-        h1 = np.random.randint(0, h - size + 1, (n,))
-        cropped_obses = np.empty((n, c, size, size), dtype=obses.dtype)
+        w1 = np.random.randint(0, offset[0] + 1, (n,))
+        h1 = np.random.randint(0, offset[1] + 1, (n,))
+        cropped_obses = np.empty((n, c, _h, _w), dtype=obses.dtype)
         for i, (obs, w11, h11) in enumerate(zip(obses, w1, h1)):
-            cropped_obses[i][:] = obs[:, h11:h11 + size, w11:w11 + size]
+            cropped_obses[i][:] = obs[:, h11:h11 + _h, w11:w11 + _w]
         return cropped_obses
 
 
@@ -114,9 +116,10 @@ def evaluate(env, agent, num_episodes, L, step, args):
 
 class BufferQueue(object):
     """Queue to transfer arbitrary number of data between processes"""
-    def __init__(self, num_items, max_size=10):
+    def __init__(self, num_items, max_size=10, start_method='spawn'):
         self.max_size = max_size
-        self.queues = [mp.Queue(max_size) for _ in range(num_items)]
+        ctx = mp.get_context(start_method)
+        self.queues = [ctx.Queue(max_size) for _ in range(num_items)]
 
     def put(self, *items):
             for queue, item in zip(self.queues, items):
@@ -126,7 +129,7 @@ class BufferQueue(object):
         return [queue.get() for queue in self.queues]
 
 
-
+import cv2 as cv
 class ReplayBuffer(object):
     """Buffer to store environment transitions."""
     def __init__(self, obs_shape, state_shape, action_shape, capacity, batch_size, device):
