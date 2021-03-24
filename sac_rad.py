@@ -203,16 +203,14 @@ class SacRadAgent:
         stats['train/batch_reward'] = reward.mean().item()
         return stats
 
-    # TODO: modify asynchronous augmnentation and update for multimodal observations
-    @staticmethod
-    def async_data_augment(agent, input_queue, output_queue):
+    def async_data_augment(self, input_queue, output_queue):
         # asynchronously augment data and convert it to tensor on another process
-        device = agent.device
+        device = self.device
         while True:
             obs, state, action, reward, next_obs, next_state, not_done = input_queue.get()
             if obs is not None:
-                obs = utils.random_augment(obs, agent.rad_offset, numpy=True)
-                next_obs = utils.random_augment(next_obs, agent.rad_offset, numpy=True)
+                obs = utils.random_augment(obs, self.rad_offset, numpy=True)
+                next_obs = utils.random_augment(next_obs, self.rad_offset, numpy=True)
             obs = torch.as_tensor(obs, device=device).float()
             state = torch.as_tensor(state, device=device)
             action = torch.as_tensor(action, device=device)

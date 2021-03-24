@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
     # train
     parser.add_argument('--init_steps', default=1000, type=int)
-    parser.add_argument('--env_steps', default=500000, type=int)
+    parser.add_argument('--env_steps', default=100000, type=int)
     parser.add_argument('--batch_size', default=100, type=int)
     parser.add_argument('--async', default=False, action='store_true')
     #parser.add_argument('--hidden_dim', default=1024, type=int)
