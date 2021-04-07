@@ -113,31 +113,31 @@ setups = {
                   'host': '192.168.2.152',  # put UR5 Controller address here
                   #'end_effector_low': np.array([-0.3, -0.6, 0.5]),
                   #'end_effector_high': np.array([0.2, 0.4, 1.0]),
-                  'end_effector_low': np.array([-0.3, -0.1, 0.2]),
-                  'end_effector_high': np.array([0.2, 1.0, 1.0]),
+                  'end_effector_low': np.array([-0.4, 0.1, 0.30]),
+                  'end_effector_high': np.array([0.3, 0.7, 0.9]),
                   'angles_low':np.pi/180 * np.array(
-                      [ 50,
+                      [ 60,
                        -180,#-180
                        -150,
-                       -210,
-                        -120,
+                       -230,
+                        -130,
                         50
                        ]
                   ),
                   'angles_high':np.pi/180 * np.array(
-                      [ 110,
+                      [ 130,
                        -0,
                         180,
-                        -120,
+                        -110,
                         -60,
-                        175
+                        190
                        ]
                   ),
                   'speed_max': 0.5,   # maximum joint speed magnitude using speedj
                   'accel_max': 1,      # maximum acceleration magnitude of the leading axis using speedj
                   'reset_speed_limit': 0.5,
-                  #'q_ref': np.array([ 1.58724391, -2.6, 1.6, -0.71790582, 1.63685572, 1.00910473]),
-                  'q_ref': np.array([ 1.58724391, -2.0, 2.1, -3.01790582, -1.63685572, 1.00910473]),
+                  'q_ref': np.array([ 1.58724391, -2.0, 2.1, -3.01790582, -1.63685572, 3.1415926]),
+                  #'q_ref': np.array([ 1.5707, -2.1, 2.3, -3.3415, -1.5707, 3.1415]),
                   'box_bound_buffer': 0.001,
                   'angle_bound_buffer': 0.001,
                   'ik_params':

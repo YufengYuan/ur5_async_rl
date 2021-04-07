@@ -6,7 +6,6 @@
 import logging
 import cv2 as cv
 import numpy as np
-
 from senseact.communicator import Communicator
 
 
@@ -86,13 +85,11 @@ class CameraCommunicator(Communicator):
         """Block and read the next available frame."""
         # reading the original frame in (height, width, depth) dimension
         #t  = time.time()
-
         retval, frame = self._cap.read()
         #frame = np.rot90(frame, k=2)
         if retval:
             # flatten and write to buffer
             self.sensor_buffer.write(frame.flatten())
-            #print(time.time() - t)
 
     def _actuator_handler(self):
         """There's no actuator available for cameras."""

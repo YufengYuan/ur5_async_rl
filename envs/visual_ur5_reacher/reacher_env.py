@@ -366,13 +366,12 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         """
         print("Resetting")
 
-        self._actuator_comms['Monitor'].actuator_buffer.write(0)
         self._q_target_, x_target = self._pick_random_angles_()
-        np.copyto(self._x_target_, x_target)
-        if self._target_type == 'position':
-            self._target_ = self._x_target_[self._end_effector_indices]
-        elif self._target_type == 'angle':
-            self._target_ = self._q_target_
+        #np.copyto(self._x_target_, x_target)
+       # if self._target_type == 'position':
+       #     self._target_ = self._x_target_[self._end_effector_indices]
+       # elif self._target_type == 'angle':
+       #     self._target_ = self._q_target_
         self._action_ = self._rand_obj_.uniform(self._action_low, self._action_high)
         self._cmd_prev_ = np.zeros(len(self._action_low))  # to be used with derivative control of velocity
         if self._reset_type != 'none':
@@ -382,11 +381,11 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
                 reset_angles = self._q_ref[self._joint_indices]
             self._reset_arm(reset_angles)
 
+        self._actuator_comms['Monitor'].actuator_buffer.write(0)
         rand_state_array_type, rand_state_array_size, rand_state_array = utils.get_random_state_array(
             self._rand_obj_.get_state()
         )
         np.copyto(self._shared_rstate_array_, np.frombuffer(rand_state_array, dtype=rand_state_array_type))
-
         print("Reset done")
 
     def _pick_random_angles_(self):
@@ -402,8 +401,8 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
 
     def _reset_arm(self, reset_angles):
         """Sends reset packet to communicator and sleeps until executed."""
-        self._actuator_comms['UR5'].actuator_buffer.write(self._stopj_packet)
-        time.sleep(0.5)
+        #self._actuator_comms['UR5'].actuator_buffer.write(self._stopj_packet)
+        #time.sleep(0.5)
 
         self._reset_packet[1:1 + 6][self._joint_indices] = reset_angles
         self._actuator_comms['UR5'].actuator_buffer.write(self._reset_packet)
@@ -452,9 +451,20 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         for i in range(self._image_history):
             images.append(image_sensation[0][i * image_length : (i + 1) * image_length].reshape(self._image_height, self._image_width, 3))
         image_sensation = np.concatenate(images, axis=-1).astype(np.uint8)
-        # TODO: finish done and reward function
         done = self._check_done()
         reward = self._compute_reward_(image_sensation)
+        #if not hasattr(self, '_previous_reward') or done:
+        #    # First step of the env
+        #    self._previous_reward = self._compute_reward_(image_sensation)
+        #    reward = 0
+        #else:
+        #    raw_reward = self._compute_reward_(image_sensation)
+        #    #if raw_reward == 0:
+        #    #    reward = -1
+        #    #else:
+        #    #    reward = raw_reward - self._previous_reward
+        #    reward = raw_reward - self._previous_reward
+        #    self._previous_reward = raw_reward
         if self._channel_first:
             image_sensation = np.rollaxis(image_sensation, 2, 0)
         return {'image': image_sensation, 'joint': joint_sensation[0]}, reward, done
@@ -525,6 +535,9 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         #    done = 0
         # TODO: use the correct obs that matches the observation_space
 
+        #time_dif = time.time() - timestamp_window[-1]
+        #if time_dif > 0.001:
+        #    print(f'Warning: Proprioception received is delayed by: {time_dif}!')
         return np.concatenate((self._q_[:, self._joint_indices].flatten(),
                                self._qd_[:, self._joint_indices].flatten() / self._speed_high,
                                #self._target_diff_,
@@ -755,7 +768,7 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
 
         elif not inside_angle_bound:
             self.angle_return_point = None
-            print('OUTSIDE ANGLE BOUNDS...')
+            #print('OUTSIDE ANGLE BOUNDS...')
             # if return point is already computed, keep going to it, no need
             self.rel_indices = self._joint_indices
             cur_pos = self._q_[0][self._joint_indices]
@@ -816,66 +829,36 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             A float reward.
         """
         image = image[:, :, -3:]
-        # TODO: put lower bound and upper bound in init functions
         lower = [0, 0, 120]
-        upper = [30, 30, 255]
+        upper = [50, 50, 255]
         lower = np.array(lower, dtype="uint8")
         upper = np.array(upper, dtype="uint8")
 
         mask = cv.inRange(image, lower, upper)
         # print(mask[395:405, 365:375])
         size_x, size_y = mask.shape
+        # reward for reaching task, may not be suitable for tracking
         if 255 in mask:
-            #xs, ys = np.where(mask == 255.)
-            #mean_x, mean_y = np.mean(xs), np.mean(ys)
-            #reward_align_x = 1 / 2 - np.abs(mean_x - int(size_x / 2)) / size_x
-            #reward_align_y = 1 / 2 - np.abs(mean_y - int(size_y / 2)) / size_y
-            #reward_align = reward_align_x + reward_align_y
-            #reward_close = len(xs) / (size_x * size_y)
-            #return reward_close * reward_align * 100
-
             xs, ys = np.where(mask == 255.)
-            reward_x = 1 / 2 - np.abs(xs - int(size_x / 2)) / size_x
+            #reward_x = 1/2  - np.abs(xs - int(size_x / 2)) / size_x
+            #reward_y = 1/2  - np.abs(ys - int(size_y / 2)) / size_y
+            reward_x = 1 / 2  - np.abs(xs - int(size_x / 2)) / size_x
             reward_y = 1 / 2 - np.abs(ys - int(size_y / 2)) / size_y
+            reward = np.sum(reward_x * reward_y) / self._image_width / self._image_height
+            reward = reward * 1000
 
-            reward = np.sum(reward_x * reward_y)
-            return reward / 20
+            #reward = len(xs) / self._image_width / self._image_height * 100
 
+            #xs, ys = np.where(mask == 255.)
+            #reward_x = 1  - np.abs(xs - int(size_x / 2)) / size_x
+            #reward_y = 1  - np.abs(ys - int(size_y / 2)) / size_y
+            #reward = np.sum(reward_x * reward_y)
+            #reward =  np.clip(reward / 100, 0, 10)
         else:
-            return 0 # -1
+            reward = 0
+        return reward
 
-        return reward_close # + reward_align
 
-        if self._target_type == "position":
-            dist = np.linalg.norm(self._target_diff_, ord=2)
-            if self._reward_type == "linear":
-                reward_dist = -dist
-            elif self._reward_type == "precision":
-                reward_dist = -dist +\
-                              np.exp( -dist**2 / 0.01)
-            elif self._reward_type == "sparse":
-                if dist < 0.05:
-                    reward_dist = 0
-                else:
-                    reward_dist = -0.1
-
-        elif self._target_type == "angle":
-            dist = np.linalg.norm(self._target_diff_, ord=1)
-            if self._reward_type == "linear":
-                reward_dist = -dist
-            elif self._reward_type == "precision":
-                reward_dist = -dist +\
-                              np.exp(-dist ** 2 / 0.01)
-            elif self._reward_type == "sparse":
-                raise NotImplementedError
-
-        # TODO: doublecheck whether '0' or '-1' should be used as the index
-        reward_vel = -self._vel_penalty * np.square(self._qd_[-1, self._joint_indices]).sum()
-
-        #self.info['reward_dist'] = reward_dist
-        #self.info['reward_vel'] = reward_vel
-
-        return (reward_dist + reward_vel) * self._dt / 0.008
 
     def _check_done(self):
         """Checks whether the episode is over.

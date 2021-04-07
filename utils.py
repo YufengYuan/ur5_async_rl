@@ -67,7 +67,7 @@ def preprocess_obs(obs, bits=5):
     obs = obs - 0.5
     return obs
 
-def random_augment(obses, offset=(4,4), numpy=False):
+def random_augment(obses, offset=(4,3), numpy=False):
     n, c, h, w = obses.shape
     _h = h - 2*offset[0]
     _w = w - 2*offset[1]
@@ -112,8 +112,6 @@ def evaluate(env, agent, num_episodes, L, step, args):
     L.dump(step)
 
 
-
-
 class BufferQueue(object):
     """Queue to transfer arbitrary number of data between processes"""
     def __init__(self, num_items, max_size=10, start_method='spawn'):
@@ -129,10 +127,9 @@ class BufferQueue(object):
         return [queue.get() for queue in self.queues]
 
 
-import cv2 as cv
-class ReplayBuffer(object):
+class RadReplayBuffer(object):
     """Buffer to store environment transitions."""
-    def __init__(self, obs_shape, state_shape, action_shape, capacity, batch_size, device):
+    def __init__(self, obs_shape, state_shape, action_shape, capacity, batch_size, rad_offset, device):
         self.capacity = capacity
         self.batch_size = batch_size
         self.device = device
@@ -145,6 +142,8 @@ class ReplayBuffer(object):
             self.obses = np.empty((capacity, *obs_shape), dtype=np.uint8)
             self.next_obses = np.empty((capacity, *obs_shape), dtype=np.uint8)
             self.ignore_obs = False
+            self.rad_h = int(rad_offset * obs_shape[1])
+            self.rad_w = int(rad_offset * obs_shape[2])
         if state_shape[-1] != 0:
             self.states = np.empty((capacity, *state_shape), dtype=np.float32)
             self.next_states = np.empty((capacity, *state_shape), dtype=np.float32)
@@ -158,13 +157,6 @@ class ReplayBuffer(object):
         self.full = False
 
     def add(self, obs, state, action, reward, next_obs, next_state, done):
-        #np.copyto(self.obses[self.idx], obs)
-        #np.copyto(self.states[self.idx], state)
-        #np.copyto(self.actions[self.idx], action)
-        #np.copyto(self.rewards[self.idx], reward)
-        #np.copyto(self.next_obses[self.idx], next_obs)
-        #np.copyto(self.next_states[self.idx], next_state)
-        #np.copyto(self.not_dones[self.idx], not done)
         if not self.ignore_obs:
             self.obses[self.idx] = obs
             self.next_obses[self.idx] = next_obs
@@ -188,6 +180,8 @@ class ReplayBuffer(object):
         else:
             obses = torch.as_tensor(self.obses[idxs], device=self.device).float()
             next_obses = torch.as_tensor(self.next_obses[idxs], device=self.device).float()
+            obses = random_augment(obses, offset=(self.rad_h, self.rad_w))
+            next_obses = random_augment(next_obses, offset=(self.rad_h, self.rad_w))
         if self.ignore_state:
             states = None
             next_states = None
@@ -199,26 +193,26 @@ class ReplayBuffer(object):
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         return obses, states, actions, rewards, next_obses, next_states, not_dones
 
-    def sample_numpy(self):
-        idxs = np.random.randint(
-            0, self.capacity if self.full else self.idx, size=self.batch_size
-        )
-        if self.ignore_obs:
-            obses = None
-            next_obses = None
-        else:
-            obses = self.obses[idxs]
-            next_obses = self.next_obses[idxs]
-        if self.ignore_state:
-            states = None
-            next_states = None
-        else:
-            states = self.states[idxs]
-            next_states = self.next_states[idxs]
-        actions = self.actions[idxs]
-        rewards = self.rewards[idxs]
-        not_dones = self.not_dones[idxs]
-        return obses, states, actions, rewards, next_obses, next_states, not_dones
+    #def sample_numpy(self):
+    #    idxs = np.random.randint(
+    #        0, self.capacity if self.full else self.idx, size=self.batch_size
+    #    )
+    #    if self.ignore_obs:
+    #        obses = None
+    #        next_obses = None
+    #    else:
+    #        obses = self.obses[idxs]
+    #        next_obses = self.next_obses[idxs]
+    #    if self.ignore_state:
+    #        states = None
+    #        next_states = None
+    #    else:
+    #        states = self.states[idxs]
+    #        next_states = self.next_states[idxs]
+    #    actions = self.actions[idxs]
+    #    rewards = self.rewards[idxs]
+    #    not_dones = self.not_dones[idxs]
+    #    return obses, states, actions, rewards, next_obses, next_states, not_dones
 
 
     def save(self, save_dir):
@@ -255,6 +249,38 @@ class ReplayBuffer(object):
             self.rewards[start:end] = payload[5]
             self.not_dones[start:end] = payload[6]
             self.idx = end
+import time
+import threading
+class AsyncRadReplayBuffer(RadReplayBuffer):
+
+    def __init__(self, obs_shape, state_shape, action_shape, capacity, batch_size, rad_offset,
+                 device, input_queue, output_queue, init_step):
+        super(AsyncRadReplayBuffer, self).__init__(obs_shape, state_shape, action_shape, capacity, batch_size,
+                                                rad_offset, device)
+        self.init_step = init_step
+        self._step = 0
+        self.input_queue = input_queue
+        self.output_queue = output_queue
+        self.start_thread()
+
+    def start_thread(self):
+        threading.Thread(target=self.recv_from_env).start()
+        threading.Thread(target=self.send_to_update).start()
+
+    def recv_from_env(self):
+        while True:
+            self.add(*self.input_queue.get())
+            self._step += 1
+
+    def send_to_update(self):
+        while True:
+            if self._step < self.init_step:
+                time.sleep(0.1)
+                continue
+            else:
+                self.output_queue.put(tuple(self.sample()))
+
+
 
 
 class FrameStack(gym.Wrapper):

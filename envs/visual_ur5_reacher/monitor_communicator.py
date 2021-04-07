@@ -51,11 +51,12 @@ class MonitorCommunicator(Communicator):
             )
             self.velocity_x, self.velocity_y = 0, 0
         elif self.target_type == 'non-stationary':
-            x, y = np.random.random(2)
-            self.target.set_center(
-                (self.radius + x * (self.width - 2 * self.radius),
-                 self.radius + y * (self.height - 2 * self.radius))
-            )
+            #x, y = np.random.random(2)
+            #self.target.set_center(
+            #    (self.radius + x * (self.width - 2 * self.radius),
+            #     self.radius + y * (self.height - 2 * self.radius))
+            #)
+            self.target.set_center((self.width / 2, self.height / 2))
             self.velocity_x, self.velocity_y = np.random.random(2) - 0.5
             velocity = np.sqrt(self.velocity_x ** 2 + self.velocity_y ** 2)
             self.velocity_x /= velocity
@@ -79,7 +80,7 @@ class MonitorCommunicator(Communicator):
            y + self.velocity_y - self.radius < 0:
             self.velocity_y = -self.velocity_y
         self.target.set_center((x + self.velocity_x, y + self.velocity_y))
-        time.sleep(0.04)
+        time.sleep(0.032)
         #self.fig.canvas.toolbar.pack_forget()
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()

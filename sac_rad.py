@@ -12,7 +12,7 @@ import os
 
 
 class SacRadAgent:
-    """SAC+AE algorithm."""
+    """SAC algorithm."""
     def __init__(
         self,
         obs_shape,
@@ -30,7 +30,7 @@ class SacRadAgent:
         critic_tau=0.005,
         critic_target_update_freq=2,
         encoder_tau=0.005,
-        rad_offset=(4, 4),
+        rad_offset=0.01,
     ):
         self.device = device
         self.discount = discount
@@ -42,12 +42,9 @@ class SacRadAgent:
         self.training_steps = training_steps
 
         # modify obs_shape when rad_offset is used
-        # TODO: better way to do this?
         if len(obs_shape) == 3:
-            obs_shape = list(obs_shape)
-            obs_shape[1] -= 2 * rad_offset[0]
-            obs_shape[2] -= 2 * rad_offset[1]
-            obs_shape = tuple(obs_shape)
+            c, h, w = obs_shape
+            obs_shape = (c, int((1 - rad_offset) * h), int((1 - rad_offset) * w))
 
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
@@ -112,7 +109,10 @@ class SacRadAgent:
     def sample_action(self, obs, state, deterministic=False):
         if obs is not None:
             c, h, w = obs.shape
-            obs = obs[:, self.rad_offset[0]: h - self.rad_offset[0], self.rad_offset[1]: w - self.rad_offset[1]]
+            obs = obs[:,
+                  int(self.rad_offset * h): h - int(self.rad_offset * h),
+                  int(self.rad_offset * w): w - int(self.rad_offset * w),
+                  ]
 
         with torch.no_grad():
             if obs is not None:
@@ -185,6 +185,7 @@ class SacRadAgent:
             'train_actor/entropy': entropy.mean().item(),
             'train_alpha/loss': alpha_loss.item(),
             'train_alpha/value': self.alpha.item(),
+            'train/entropy': entropy.mean().item(),
         }
         return actor_stats
 
@@ -225,7 +226,6 @@ class SacRadAgent:
         # asynchronously update actor critic on another process
         while True:
             obs, state, action, reward, next_obs, next_state, not_done = tensor_queue.get()
-
             stats = self.update_critic(obs, state, action, reward, next_obs, next_state, not_done)
             if self.num_updates % self.actor_update_freq == 0:
                 actor_stats = self.update_actor_and_alpha(obs, state)
