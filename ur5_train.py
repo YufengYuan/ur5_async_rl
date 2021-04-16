@@ -8,6 +8,7 @@ import sys
 import random
 import time
 import json
+import copy
 import dmc2gym
 import  threading
 from sac_rad import SacRadAgent
@@ -44,12 +45,13 @@ def parse_args():
 
     # replay buffer
     parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
-    parser.add_argument('--rad_offset', default=0.025, type=float)
+    parser.add_argument('--rad_offset', default=0.01, type=float)
     # train
     parser.add_argument('--init_step', default=1000, type=int)
     parser.add_argument('--env_step', default=100000, type=int)
     parser.add_argument('--batch_size', default=100, type=int)
     parser.add_argument('--async', default=False, action='store_true')
+    parser.add_argument('--max_update_freq', default=2, type=int)
     #parser.add_argument('--hidden_dim', default=1024, type=int)
     # eval
     #parser.add_argument('--no_eval', default=False, action='store_true')
@@ -61,7 +63,7 @@ def parse_args():
     parser.add_argument('--critic_target_update_freq', default=2, type=int)
     # actor
     parser.add_argument('--actor_lr', default=1e-3, type=float)
-    parser.add_argument('--actor_update_freq', default=3, type=int)
+    parser.add_argument('--actor_update_freq', default=2, type=int)
     # encoder
     parser.add_argument('--encoder_tau', default=0.05, type=float)
 
@@ -117,12 +119,6 @@ def main():
     else:
         device = torch.device(args.device)
 
-    # the dmc2gym wrapper standardizes actions
-    #assert env.action_space.low.min() >= -1
-    #assert env.action_space.high.max() <= 1
-
-
-
     agent = SacRadAgent(
         obs_shape=env.observation_space.shape,
         state_shape=env.state_space.shape,
@@ -149,12 +145,6 @@ def main():
 
         # easily transfer step information to 'async_recv_data'
 
-        #def async_send_data(replay_buffer, buffer_queue, stop):
-        #    while True:
-        #        if stop():
-        #            break
-        #        buffer_queue.put(*replay_buffer.sample_numpy())
-
         def recv_from_update(buffer_queue, L, stop):
             while True:
                 if stop():
@@ -163,14 +153,9 @@ def main():
                 for k, v in stat_dict.items():
                     L.log(k, v, step)
 
-        #processes = []
-        #threads = []
         # initialize processes in 'spawn' mode, required by CUDA runtime
         ctx = mp.get_context('spawn')
 
-        #input_queue = BufferQueue(7, 10)
-        #output_queue = BufferQueue(1, 10)
-        #tensor_queue = BufferQueue(7, 10)
         MAX_QSIZE = 10
         input_queue = ctx.Queue(MAX_QSIZE)
         output_queue = ctx.Queue(MAX_QSIZE)
@@ -188,7 +173,8 @@ def main():
                                     device,
                                     input_queue,
                                     tensor_queue,
-                                    args.init_step)
+                                    args.init_step,
+                                    args.max_update_freq)
                                 )
         replay_buffer_process.start()
         # initialize SAC update process
@@ -197,10 +183,6 @@ def main():
         update_process.start()
         # flag for whether stop threads
         stop = False
-        # initialize transition sending thread
-        #t_send = threading.Thread(target=async_send_data, args=(replay_buffer, input_queue, lambda: stop))
-        #threads.append(t_send)
-        #t_send.start()
         # initialize training statistics receiving thread
         stat_recv_thread = threading.Thread(target=recv_from_update, args=(output_queue, L, lambda: stop))
         #threads.append(t_recv)
@@ -219,7 +201,6 @@ def main():
     episode, episode_reward, episode_step, done = 0, 0, 0, True
     start_time = time.time()
     obs, state = env.reset()
-
     for step in range(args.env_step + 1 + args.init_step):
         if done and step > 0:
             L.log('train/duration', time.time() - start_time, step)
@@ -232,21 +213,19 @@ def main():
             episode_step = 0
             episode += 1
             L.log('train/episode', episode, step)
+            # wait image and joint update after reset
+            #time.sleep(1.0)
             #if args.save_model_freq > 0 and step > 0 and step % args.save_model_freq == 0:
             #    agent.save(model_dir, step)
 
         # sample action for data collection
         if step < args.init_step:
-            if step % 4 == 0:
+            if step % args.action_repeat == 0:
                 action = env.action_space.sample()
         else:
             with utils.eval_mode(agent):
                 if step % args.action_repeat == 0:
                     action = agent.sample_action(obs, state)
-
-        #if args.async and step == args.init_steps:
-        #        t.start()
-        #elif not args.async and step >= args.init_steps:
 
         # step in the environment
         next_obs, next_state, reward, done, _ = env.step(action)
@@ -257,7 +236,6 @@ def main():
             replay_buffer.add(obs, state, action, reward, next_obs, next_state, done)
             if step >= args.init_step:
                 agent.update(replay_buffer)
-
         obs = next_obs
         state = next_state
         episode_step += 1

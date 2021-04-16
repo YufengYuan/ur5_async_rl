@@ -365,7 +365,7 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         generates a new target within a safety box.
         """
         print("Resetting")
-
+        self._actuator_comms['Monitor'].actuator_buffer.write(0)
         self._q_target_, x_target = self._pick_random_angles_()
         #np.copyto(self._x_target_, x_target)
        # if self._target_type == 'position':
@@ -380,8 +380,8 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             elif self._reset_type == 'zero':
                 reset_angles = self._q_ref[self._joint_indices]
             self._reset_arm(reset_angles)
-
-        self._actuator_comms['Monitor'].actuator_buffer.write(0)
+        for i in range(self._image_history):
+            self._sensor_to_sensation_()
         rand_state_array_type, rand_state_array_size, rand_state_array = utils.get_random_state_array(
             self._rand_obj_.get_state()
         )
@@ -441,10 +441,13 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             A tuple (observation, reward, done)
         """
 
-        joint_sensation, _, _ = self._joint_buffer.read_update()
-        image_sensation, _, _ = self._image_buffer.read_update()
-
-        #img = np.reshape(image_sensation[0], [self._image_width, self._image_height, 3])
+        joint_sensation, joint_timestamp, _ = self._joint_buffer.read_update()
+        image_sensation, image_timestamp, _ = self._image_buffer.read_update()
+        if np.abs(joint_timestamp[-1] - image_timestamp[-1]) > 0.04:
+            print(f'Warning: Image received is delayed by: {np.abs(joint_timestamp[-1] - image_timestamp[-1])}!')
+            time.sleep(0.04)
+            joint_sensation, joint_timestamp, _ = self._joint_buffer.read_update()
+            image_sensation, image_timestamp, _ = self._image_buffer.read_update()
         # reshape flattened images
         images = []
         image_length = self._image_width * self._image_height * 3
@@ -452,19 +455,7 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             images.append(image_sensation[0][i * image_length : (i + 1) * image_length].reshape(self._image_height, self._image_width, 3))
         image_sensation = np.concatenate(images, axis=-1).astype(np.uint8)
         done = self._check_done()
-        reward = self._compute_reward_(image_sensation)
-        #if not hasattr(self, '_previous_reward') or done:
-        #    # First step of the env
-        #    self._previous_reward = self._compute_reward_(image_sensation)
-        #    reward = 0
-        #else:
-        #    raw_reward = self._compute_reward_(image_sensation)
-        #    #if raw_reward == 0:
-        #    #    reward = -1
-        #    #else:
-        #    #    reward = raw_reward - self._previous_reward
-        #    reward = raw_reward - self._previous_reward
-        #    self._previous_reward = raw_reward
+        reward = self._compute_reward_(image_sensation, joint_sensation[0][self._joint_indices])
         if self._channel_first:
             image_sensation = np.rollaxis(image_sensation, 2, 0)
         return {'image': image_sensation, 'joint': joint_sensation[0]}, reward, done
@@ -822,7 +813,7 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
                                np.all(xyz <= self._end_effector_high - self._box_bound_buffer))
         return inside_bound, inside_buffer_bound, mat, xyz
 
-    def _compute_reward_(self, image):
+    def _compute_reward_(self, image, joint):
         """Computes reward at a given time step.
 
         Returns:
@@ -840,23 +831,22 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         # reward for reaching task, may not be suitable for tracking
         if 255 in mask:
             xs, ys = np.where(mask == 255.)
-            #reward_x = 1/2  - np.abs(xs - int(size_x / 2)) / size_x
-            #reward_y = 1/2  - np.abs(ys - int(size_y / 2)) / size_y
             reward_x = 1 / 2  - np.abs(xs - int(size_x / 2)) / size_x
             reward_y = 1 / 2 - np.abs(ys - int(size_y / 2)) / size_y
             reward = np.sum(reward_x * reward_y) / self._image_width / self._image_height
+            #reward = np.sum(reward_x + reward_y) / self._image_width / self._image_height
             reward = reward * 1000
-
-            #reward = len(xs) / self._image_width / self._image_height * 100
-
-            #xs, ys = np.where(mask == 255.)
-            #reward_x = 1  - np.abs(xs - int(size_x / 2)) / size_x
-            #reward_y = 1  - np.abs(ys - int(size_y / 2)) / size_y
-            #reward = np.sum(reward_x * reward_y)
-            #reward =  np.clip(reward / 100, 0, 10)
         else:
             reward = 0
-        return reward
+
+        '''
+        When the joint 4 is perpendicular to the mounting ground:
+            joint 0 + joint 4 == 0
+            joint 1 + joint 2 + joint 3 == -pi
+        '''
+        #scale = 1 - 2 * (np.abs(joint[0] + joint[4]) + np.abs(np.pi + np.sum(joint[1:4]))) / np.pi
+        scale = (np.abs(joint[0] + joint[4]) + np.abs(np.pi + np.sum(joint[1:4])))
+        return reward - scale
 
 
 

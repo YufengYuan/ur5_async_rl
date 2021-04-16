@@ -44,7 +44,7 @@ class SacRadAgent:
         # modify obs_shape when rad_offset is used
         if len(obs_shape) == 3:
             c, h, w = obs_shape
-            obs_shape = (c, int((1 - rad_offset) * h), int((1 - rad_offset) * w))
+            obs_shape = (c, h - round(rad_offset * h) * 2, w - round(rad_offset * w) * 2)
 
         self.actor_lr = actor_lr
         self.critic_lr = critic_lr
@@ -62,7 +62,6 @@ class SacRadAgent:
 
         if hasattr(self.actor.encoder, 'convs'):
             self.actor.encoder.convs = self.critic.encoder.convs
-
         self.log_alpha = torch.tensor(np.log(init_temperature)).to(device)
         self.log_alpha.requires_grad = True
         # set target entropy to -|A|
@@ -72,7 +71,7 @@ class SacRadAgent:
 
         # optimizers
         self.init_optimizers()
-
+        self._huber_loss = torch.nn.SmoothL1Loss()
         self.train()
         self.critic_target.train()
 
@@ -110,8 +109,8 @@ class SacRadAgent:
         if obs is not None:
             c, h, w = obs.shape
             obs = obs[:,
-                  int(self.rad_offset * h): h - int(self.rad_offset * h),
-                  int(self.rad_offset * w): w - int(self.rad_offset * w),
+                  round(self.rad_offset * h): h - round(self.rad_offset * h),
+                  round(self.rad_offset * w): w - round(self.rad_offset * w),
                   ]
 
         with torch.no_grad():
@@ -141,14 +140,17 @@ class SacRadAgent:
         current_Q1, current_Q2 = self.critic(obs, state, action, detach_encoder=False)
 
         # Ignore terminal transitions to enable infinite bootstrap
-        # TODO: disable infinite bootstrap in environments other than DM_control
+        # TODO: whether we need to scale the critic loss by 2?
         critic_loss = torch.mean(
             (current_Q1 - target_Q) ** 2 * not_done + (current_Q2 - target_Q) ** 2 * not_done
              #(current_Q1 - target_Q) ** 2 + (current_Q2 - target_Q) ** 2
         )
+        #critic_loss = self._huber_loss(current_Q1 * not_done, target_Q * not_done) + \
+        #              self._huber_loss(current_Q2 * not_done, target_Q * not_done)
         # Optimize the critic
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 10)
         self.critic_optimizer.step()
 
         critic_stats = {

@@ -113,13 +113,13 @@ setups = {
                   'host': '192.168.2.152',  # put UR5 Controller address here
                   #'end_effector_low': np.array([-0.3, -0.6, 0.5]),
                   #'end_effector_high': np.array([0.2, 0.4, 1.0]),
-                  'end_effector_low': np.array([-0.4, 0.1, 0.30]),
-                  'end_effector_high': np.array([0.3, 0.7, 0.9]),
+                  'end_effector_low': np.array([-0.4, 0.05, 0.10]),
+                  'end_effector_high': np.array([0.3, 0.8, 0.8]),
                   'angles_low':np.pi/180 * np.array(
-                      [ 60,
+                      [ 50,
                        -180,#-180
                        -150,
-                       -230,
+                       -250,
                         -130,
                         50
                        ]
@@ -136,48 +136,8 @@ setups = {
                   'speed_max': 0.5,   # maximum joint speed magnitude using speedj
                   'accel_max': 1,      # maximum acceleration magnitude of the leading axis using speedj
                   'reset_speed_limit': 0.5,
-                  'q_ref': np.array([ 1.58724391, -2.0, 2.1, -3.01790582, -1.63685572, 3.1415926]),
-                  #'q_ref': np.array([ 1.5707, -2.1, 2.3, -3.3415, -1.5707, 3.1415]),
-                  'box_bound_buffer': 0.001,
-                  'angle_bound_buffer': 0.001,
-                  'ik_params':
-                      (
-                          0.089159, # d1
-                          -0.42500, # a2
-                          -0.39225, # a3
-                          0.10915,  # d4
-                          0.09465,  # d5
-                          0.0823    # d6
-                      )
-              },
-    'Visual_UR5_extra':
-              {
-                  'host': '192.168.2.152',  # put UR5 Controller address here
-                  'end_effector_low': np.array([-0.3, -0.6, 0.5]),
-                  'end_effector_high': np.array([0.2, 0.4, 1.0]),
-                  'angles_low':np.pi/180 * np.array(
-                      [ 150,
-                       -180,#-180
-                       -120,
-                       -50,
-                        50,
-                        50
-                       ]
-                  ),
-                  'angles_high':np.pi/180 * np.array(
-                      [ 210,
-                       -60,
-                        130,
-                        75,
-                        120,
-                        175
-                       ]
-                  ),
-                  'speed_max': 0.3,   # maximum joint speed magnitude using speedj
-                  'accel_max': 1,      # maximum acceleration magnitude of the leading axis using speedj
-                  'reset_speed_limit': 0.5,
-                  #'q_ref': np.array([ 1.58724391, -2.6, 1.6, -0.71790582, 1.63685572, 1.00910473]),
-                  'q_ref': np.array([ 3.14, -2.4, 1.5, 0.91790582, 1.63685572, 1.00910473]),
+                  #'q_ref': np.array([ 1.58724391, -2.0, 2.1, -3.01790582, -1.63685572, 3.1415926]),
+                  'q_ref': np.array([ 1.5707, -2.0, 1.9, -3.0415, -1.5707, 3.1415]),
                   'box_bound_buffer': 0.001,
                   'angle_bound_buffer': 0.001,
                   'ik_params':

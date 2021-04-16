@@ -5,13 +5,28 @@ import torch.nn.functional as F
 import copy
 
 
+#def weight_init(m):
+#    """Kaiming_normal is standard for relu networks, sometimes."""
+#    if isinstance(m, (torch.nn.Linear, torch.nn.Conv2d)):
+#        torch.nn.init.kaiming_normal_(m.weight, mode="fan_in",
+#            nonlinearity="relu")
+#        if m.bias is not None:
+#            torch.nn.init.zeros_(m.bias)
+
 def weight_init(m):
-    """Kaiming_normal is standard for relu networks, sometimes."""
-    if isinstance(m, (torch.nn.Linear, torch.nn.Conv2d)):
-        torch.nn.init.kaiming_normal_(m.weight, mode="fan_in",
-            nonlinearity="relu")
-        if m.bias is not None:
-            torch.nn.init.zeros_(m.bias)
+    """Custom weight init for Conv2D and Linear layers."""
+    if isinstance(m, nn.Linear):
+        nn.init.orthogonal_(m.weight.data)
+        m.bias.data.fill_(0.0)
+    elif isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
+        # delta-orthogonal init from https://arxiv.org/pdf/1806.05393.pdf
+        assert m.weight.size(2) == m.weight.size(3)
+        m.weight.data.fill_(0.0)
+        m.bias.data.fill_(0.0)
+        mid = m.weight.size(2) // 2
+        gain = nn.init.calculate_gain('relu')
+        nn.init.orthogonal_(m.weight.data[:, :, mid, mid], gain)
+
 
 def conv_out_size(input_size, kernel_size, stride, padding=0):
     return ((input_size - kernel_size + 2 * padding) // stride) + 1
@@ -101,10 +116,10 @@ class EncoderModel(nn.Module):
         self.ss = SpatialSoftmax(height, width, conv_params[-1][1])
         self.fc = nn.Linear(conv_params[-1][1] * width * height, latent_dim)
         self.ln = nn.LayerNorm(latent_dim)
-        #self.outputs = dict()
         self.apply(weight_init)
 
     def forward(self, obs, state, detach=False):
+        obs = obs / 255.
         if self.encoder_type == 'state':
             return state
         elif self.encoder_type == 'pixel':

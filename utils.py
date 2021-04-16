@@ -67,31 +67,16 @@ def preprocess_obs(obs, bits=5):
     obs = obs - 0.5
     return obs
 
-def random_augment(obses, offset=(4,3), numpy=False):
+def random_augment(obses, rad_height, rad_width):
     n, c, h, w = obses.shape
-    _h = h - 2*offset[0]
-    _w = w - 2*offset[1]
-    if not numpy:
-        w1 = torch.randint(0,  + 1, (n,))
-        h1 = torch.randint(0,  + 1, (n,))
-        cropped_obses = torch.empty((n, c, _h, _w), device=obses.device).float()
-        for i, (obs, w11, h11) in enumerate(zip(obses, w1, h1)):
-            cropped_obses[i][:] = obs[:, h11:h11 + _h, w11:w11 + _w]
-        return cropped_obses
-    else:
-        w1 = np.random.randint(0, offset[0] + 1, (n,))
-        h1 = np.random.randint(0, offset[1] + 1, (n,))
-        cropped_obses = np.empty((n, c, _h, _w), dtype=obses.dtype)
-        for i, (obs, w11, h11) in enumerate(zip(obses, w1, h1)):
-            cropped_obses[i][:] = obs[:, h11:h11 + _h, w11:w11 + _w]
-        return cropped_obses
-
-
-def fast_random_augment(obses, size=84):
-    n, c, h, w = obses.shape
-    _w = np.random.randint(0, w - size + 1)
-    _h = np.random.randint(0, w - size + 1)
-    return obses[:, :, _w : _w + size, _h : _h +size]
+    _h = h - 2 * rad_height
+    _w = w - 2 * rad_width
+    w1 = torch.randint(0, rad_width + 1, (n,))
+    h1 = torch.randint(0, rad_height + 1, (n,))
+    cropped_obses = torch.empty((n, c, _h, _w), device=obses.device).float()
+    for i, (obs, w11, h11) in enumerate(zip(obses, w1, h1)):
+        cropped_obses[i][:] = obs[:, h11:h11 + _h, w11:w11 + _w]
+    return cropped_obses
 
 def evaluate(env, agent, num_episodes, L, step, args):
     for i in range(num_episodes):
@@ -142,8 +127,8 @@ class RadReplayBuffer(object):
             self.obses = np.empty((capacity, *obs_shape), dtype=np.uint8)
             self.next_obses = np.empty((capacity, *obs_shape), dtype=np.uint8)
             self.ignore_obs = False
-            self.rad_h = int(rad_offset * obs_shape[1])
-            self.rad_w = int(rad_offset * obs_shape[2])
+            self.rad_h = round(rad_offset * obs_shape[1])
+            self.rad_w = round(rad_offset * obs_shape[2])
         if state_shape[-1] != 0:
             self.states = np.empty((capacity, *state_shape), dtype=np.float32)
             self.next_states = np.empty((capacity, *state_shape), dtype=np.float32)
@@ -180,8 +165,8 @@ class RadReplayBuffer(object):
         else:
             obses = torch.as_tensor(self.obses[idxs], device=self.device).float()
             next_obses = torch.as_tensor(self.next_obses[idxs], device=self.device).float()
-            obses = random_augment(obses, offset=(self.rad_h, self.rad_w))
-            next_obses = random_augment(next_obses, offset=(self.rad_h, self.rad_w))
+            obses = random_augment(obses, self.rad_h, self.rad_w)
+            next_obses = random_augment(next_obses, self.rad_h, self.rad_w)
         if self.ignore_state:
             states = None
             next_states = None
@@ -251,14 +236,17 @@ class RadReplayBuffer(object):
             self.idx = end
 import time
 import threading
+import cv2 as cv
 class AsyncRadReplayBuffer(RadReplayBuffer):
 
     def __init__(self, obs_shape, state_shape, action_shape, capacity, batch_size, rad_offset,
-                 device, input_queue, output_queue, init_step):
+                 device, input_queue, output_queue, init_step, max_update_freq):
         super(AsyncRadReplayBuffer, self).__init__(obs_shape, state_shape, action_shape, capacity, batch_size,
                                                 rad_offset, device)
         self.init_step = init_step
         self._step = 0
+        self._send_counter = 0
+        self._max_update_freq = max_update_freq
         self.input_queue = input_queue
         self.output_queue = output_queue
         self.start_thread()
@@ -271,15 +259,19 @@ class AsyncRadReplayBuffer(RadReplayBuffer):
         while True:
             self.add(*self.input_queue.get())
             self._step += 1
+            #items = self.input_queue.get()
+            #self.add(*items)
+            #self._step += 1
+            #img = np.asarray(np.rollaxis(items[0], 0, 3)[:, :, -3:], dtype=np.uint8)
+            #cv.imwrite(f'imgs/{self._step}.png', img)
 
     def send_to_update(self):
         while True:
-            if self._step < self.init_step:
-                time.sleep(0.1)
-                continue
-            else:
+            if self._send_counter < (self._step - self.init_step) * self._max_update_freq:
                 self.output_queue.put(tuple(self.sample()))
-
+                self._send_counter += 1
+            else:
+                time.sleep(0.1)
 
 
 
