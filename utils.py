@@ -240,7 +240,7 @@ import cv2 as cv
 class AsyncRadReplayBuffer(RadReplayBuffer):
 
     def __init__(self, obs_shape, state_shape, action_shape, capacity, batch_size, rad_offset,
-                 device, input_queue, output_queue, init_step, max_update_freq):
+                 device, input_queue, output_queue, init_step, max_update_freq, sync_queue):
         super(AsyncRadReplayBuffer, self).__init__(obs_shape, state_shape, action_shape, capacity, batch_size,
                                                 rad_offset, device)
         self.init_step = init_step
@@ -249,6 +249,7 @@ class AsyncRadReplayBuffer(RadReplayBuffer):
         self._max_update_freq = max_update_freq
         self.input_queue = input_queue
         self.output_queue = output_queue
+        self.sync_queue = sync_queue
         self.start_thread()
 
     def start_thread(self):
@@ -259,20 +260,16 @@ class AsyncRadReplayBuffer(RadReplayBuffer):
         while True:
             self.add(*self.input_queue.get())
             self._step += 1
-            #items = self.input_queue.get()
-            #self.add(*items)
-            #self._step += 1
-            #img = np.asarray(np.rollaxis(items[0], 0, 3)[:, :, -3:], dtype=np.uint8)
-            #cv.imwrite(f'imgs/{self._step}.png', img)
 
     def send_to_update(self):
         while True:
-            if self._send_counter < (self._step - self.init_step) * self._max_update_freq:
+            if self._send_counter > (self._step - self.init_step) * self._max_update_freq:
+                time.sleep(0.1)
+            else:
+                if self.sync_queue is not None:
+                    self.sync_queue.get()
                 self.output_queue.put(tuple(self.sample()))
                 self._send_counter += 1
-            else:
-                time.sleep(0.1)
-
 
 
 class FrameStack(gym.Wrapper):

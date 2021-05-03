@@ -116,11 +116,11 @@ setups = {
                   'end_effector_low': np.array([-0.4, 0.05, 0.10]),
                   'end_effector_high': np.array([0.3, 0.8, 0.8]),
                   'angles_low':np.pi/180 * np.array(
-                      [ 50,
+                      [ 60,
                        -180,#-180
                        -150,
                        -250,
-                        -130,
+                        -135,
                         50
                        ]
                   ),
@@ -129,7 +129,7 @@ setups = {
                        -0,
                         180,
                         -110,
-                        -60,
+                        -45,
                         190
                        ]
                   ),

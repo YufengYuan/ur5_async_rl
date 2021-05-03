@@ -16,7 +16,7 @@ import utils
 from logger import Logger
 from queue import Queue
 import torch.multiprocessing as mp
-from torch.multiprocessing import Lock
+#import multiprocessing as mp
 from utils import BufferQueue
 import multiprocessing
 from utils import evaluate
@@ -30,7 +30,7 @@ import cv2 as cv
 def parse_args():
     parser = argparse.ArgumentParser()
     # environment
-    parser.add_argument('--env', default='Visual-UR5')
+    parser.add_argument('--env', default='Visual-UR5_stationary')
     parser.add_argument('--ip', default='129.128.159.210', type=str)
     parser.add_argument('--camera_id', default=0, type=int)
     parser.add_argument('--image_width', default=160, type=int)
@@ -52,6 +52,11 @@ def parse_args():
     parser.add_argument('--batch_size', default=100, type=int)
     parser.add_argument('--async', default=False, action='store_true')
     parser.add_argument('--max_update_freq', default=2, type=int)
+    parser.add_argument('--hidden_dim', default=1024, type=int)
+    # eval
+    parser.add_argument('--no_eval', default=False, action='store_true')
+    parser.add_argument('--eval_freq', default=5000, type=int)
+    parser.add_argument('--num_eval_episodes', default=10, type=int)
     # critic
     parser.add_argument('--critic_lr', default=1e-3, type=float)
     parser.add_argument('--critic_tau', default=0.01, type=float)
@@ -61,6 +66,7 @@ def parse_args():
     parser.add_argument('--actor_update_freq', default=2, type=int)
     # encoder
     parser.add_argument('--encoder_tau', default=0.05, type=float)
+
     # sac
     parser.add_argument('--discount', default=0.99, type=float)
     parser.add_argument('--init_temperature', default=0.1, type=float)
@@ -69,13 +75,12 @@ def parse_args():
     parser.add_argument('--seed', default=9, type=int)
     parser.add_argument('--work_dir', default='.', type=str)
     parser.add_argument('--save_tb', default=False, action='store_true')
-    parser.add_argument('--save_model', default=False, action='store_true')
+    #parser.add_argument('--save_model', default=False, action='store_true')
     #parser.add_argument('--save_buffer', default=False, action='store_true')
     parser.add_argument('--save_model_freq', default=5000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
     #parser.add_argument('--save_video', default=False, action='store_true')
     parser.add_argument('--device', default='', type=str)
-    parser.add_argument('--lock', default=False, action='store_true')
     args = parser.parse_args()
     return args
 
@@ -135,69 +140,7 @@ def main():
 
     L = Logger(args.work_dir, use_tb=args.save_tb)
 
-    if args.async:
-        agent.share_memory()
-
-        # easily transfer step information to 'async_recv_data'
-
-        def recv_from_update(buffer_queue, L, stop):
-            while True:
-                if stop():
-                    break
-                stat_dict = buffer_queue.get()
-                for k, v in stat_dict.items():
-                    L.log(k, v, step)
-
-        # initialize processes in 'spawn' mode, required by CUDA runtime
-        ctx = mp.get_context('spawn')
-
-        MAX_QSIZE = 10
-        input_queue = ctx.Queue(MAX_QSIZE)
-        output_queue = ctx.Queue(MAX_QSIZE)
-        tensor_queue = ctx.Queue(MAX_QSIZE)
-        if args.lock:
-            sync_queue = ctx.Queue(1)
-            sync_queue.put(1)
-        else:
-            sync_queue = None
-        # initialize data augmentation process
-        replay_buffer_process = ctx.Process(target=utils.AsyncRadReplayBuffer,
-                                args=(
-                                    env.observation_space.shape,
-                                    env.state_space.shape,
-                                    env.action_space.shape,
-                                    args.replay_buffer_capacity,
-                                    args.batch_size,
-                                    args.rad_offset,
-                                    device,
-                                    input_queue,
-                                    tensor_queue,
-                                    args.init_step,
-                                    args.max_update_freq,
-                                    sync_queue
-                                    )
-                                )
-        replay_buffer_process.start()
-        # initialize SAC update process
-        update_process = ctx.Process(target=agent.async_update,
-                               args=(tensor_queue, output_queue, sync_queue))
-        update_process.start()
-        # flag for whether stop threads
-        stop = False
-        # initialize training statistics receiving thread
-        stat_recv_thread = threading.Thread(target=recv_from_update, args=(output_queue, L, lambda: stop))
-        stat_recv_thread.start()
-    else:
-        replay_buffer = utils.RadReplayBuffer(
-            obs_shape=env.observation_space.shape,
-            state_shape=env.state_space.shape,
-            action_shape=env.action_space.shape,
-            capacity=args.replay_buffer_capacity,
-            batch_size=args.batch_size,
-            rad_offset=args.rad_offset,
-            device=device
-        )
-
+    agent.load(model_dir, 10000)
     episode, episode_reward, episode_step, done = 0, 0, 0, True
     start_time = time.time()
     obs, state = env.reset()
@@ -213,38 +156,19 @@ def main():
             episode_step = 0
             episode += 1
             L.log('train/episode', episode, step)
-            if args.save_model and step > 0 and step % args.save_model_freq == 0:
-                agent.save(model_dir, step)
 
-        # sample action for data collection
-        if step < args.init_step:
-            if step % args.action_repeat == 0:
-                action = env.action_space.sample()
-        else:
-            with utils.eval_mode(agent):
-                if step % args.action_repeat == 0:
-                    action = agent.sample_action(obs, state)
-
+        if step % args.action_repeat == 0:
+            action = agent.sample_action(obs, state)
+        #image = np.asarray(np.rollaxis(obs, 0, 3), dtype=np.uint8)
+        image = np.rollaxis(obs, 0, 3)
+        cv.imshow('Camera', image[:, :, -3:])
+        cv.waitKey(int(args.dt * 1000))
         # step in the environment
         next_obs, next_state, reward, done, _ = env.step(action)
         episode_reward += reward
-        if args.async:
-            input_queue.put((obs, state, action, reward, next_obs, next_state, done))
-        else:
-            replay_buffer.add(obs, state, action, reward, next_obs, next_state, done)
-            if step >= args.init_step:
-                agent.update(*replay_buffer.sample())
         obs = next_obs
         state = next_state
         episode_step += 1
-
-        # Terminate all threads and processes once done
-        if step == args.env_step + 1 + args.init_step  and args.async:
-            stop = True
-            stat_recv_thread.join()
-            replay_buffer_process.terminate()
-            update_process.terminate()
-
 
 if __name__ == '__main__':
     main()

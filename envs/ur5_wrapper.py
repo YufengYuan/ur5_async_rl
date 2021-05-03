@@ -66,7 +66,7 @@ def make_env(setup='Visual_UR5',
 
 class UR5Wrapper():
     def __init__(self,
-                 setup='Visual_Ur5',
+                 setup='Visual_UR5',
                  ip='129.128.159.210',
                  seed=9,
                  camera_id=0,

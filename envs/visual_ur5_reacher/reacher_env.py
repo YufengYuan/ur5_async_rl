@@ -42,7 +42,7 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
                  channel_first=True,
                  control_type='position',
                  derivative_type='none',
-                 target_type='stationary',
+                 target_type='reacher',
                  reset_type='random',
                  deriv_action_max=10,
                  first_deriv_max=10,  # used only with second derivative control
@@ -129,7 +129,7 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         assert control_type in ['position', 'velocity', 'acceleration']
         assert derivative_type in ['none', 'first', 'second']
 
-        assert target_type in ['static', 'stationary', 'non-stationary']
+        assert target_type in ['static', 'reacher', 'tracker']
         assert reset_type in ['random', 'zero', 'none']
         assert actuation_sync_period >= 0
 
@@ -314,13 +314,6 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             array_type='d',
             np_array_type='d',
         )
-
-        #self._monitor_buffer = SharedBuffer(
-        #    buffer_len=SharedBuffer.DEFAULT_BUFFER_LEN,
-        #    array_len=1,
-        #    array_type='d',
-        #    np_array_type='d',
-        #)
 
         # The last action
         self._action_ = self._rand_obj_.uniform(self._action_low, self._action_high)

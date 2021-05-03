@@ -10,7 +10,7 @@ from senseact.sharedbuffer import SharedBuffer
 
 class MonitorCommunicator(Communicator):
 
-    def __init__(self, target_type='stationary', width=160, height=90, radius=7):
+    def __init__(self, target_type='reacher', width=160, height=90, radius=7):
         mpl.rcParams['toolbar'] = 'None'
         plt.ion()
         self.fig = plt.figure()
@@ -43,14 +43,14 @@ class MonitorCommunicator(Communicator):
         if self.target_type == 'static':
             self.target.set_center((self.width / 2, self.height / 2))
             self.velocity_x, self.velocity_y = 0, 0
-        if self.target_type == 'stationary':
+        if self.target_type == 'reacher':
             x, y = np.random.random(2)
             self.target.set_center(
                 (self.radius + x * (self.width - 2 * self.radius),
                  self.radius + y * (self.height - 2 * self.radius))
             )
             self.velocity_x, self.velocity_y = 0, 0
-        elif self.target_type == 'non-stationary':
+        elif self.target_type == 'tracker':
             #x, y = np.random.random(2)
             #self.target.set_center(
             #    (self.radius + x * (self.width - 2 * self.radius),
