@@ -113,14 +113,14 @@ setups = {
                   'host': '192.168.2.152',  # put UR5 Controller address here
                   #'end_effector_low': np.array([-0.3, -0.6, 0.5]),
                   #'end_effector_high': np.array([0.2, 0.4, 1.0]),
-                  'end_effector_low': np.array([-0.4, 0.05, 0.10]),
-                  'end_effector_high': np.array([0.3, 0.8, 0.8]),
+                  'end_effector_low': np.array([-0.35, 0.10, 0.10]),
+                  'end_effector_high': np.array([0.35, 0.8, 0.8]),
                   'angles_low':np.pi/180 * np.array(
-                      [ 60,
+                      [ 50,
                        -180,#-180
                        -150,
                        -250,
-                        -135,
+                        -120,
                         50
                        ]
                   ),
@@ -129,7 +129,7 @@ setups = {
                        -0,
                         180,
                         -110,
-                        -45,
+                        -30,
                         190
                        ]
                   ),

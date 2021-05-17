@@ -35,14 +35,12 @@ def parse_args():
     parser.add_argument('--camera_id', default=0, type=int)
     parser.add_argument('--image_width', default=160, type=int)
     parser.add_argument('--image_height', default=120, type=int)
-    parser.add_argument('--action_repeat', default=4, type=int)
+    parser.add_argument('--action_repeat', default=1, type=int)
     parser.add_argument('--image_history', default=3, type=int)
     parser.add_argument('--joint_history', default=1, type=int)
     parser.add_argument('--ignore_joint', default=False, action='store_true')
     parser.add_argument('--episode_length', default=4.0, type=float)
     parser.add_argument('--dt', default=0.04, type=float)
-
-
     # replay buffer
     parser.add_argument('--replay_buffer_capacity', default=100000, type=int)
     parser.add_argument('--rad_offset', default=0.01, type=float)
@@ -53,11 +51,11 @@ def parse_args():
     parser.add_argument('--async', default=False, action='store_true')
     parser.add_argument('--max_update_freq', default=2, type=int)
     # critic
-    parser.add_argument('--critic_lr', default=1e-3, type=float)
+    parser.add_argument('--critic_lr', default=3e-4, type=float)
     parser.add_argument('--critic_tau', default=0.01, type=float)
     parser.add_argument('--critic_target_update_freq', default=2, type=int)
     # actor
-    parser.add_argument('--actor_lr', default=1e-3, type=float)
+    parser.add_argument('--actor_lr', default=3e-4, type=float)
     parser.add_argument('--actor_update_freq', default=2, type=int)
     # encoder
     parser.add_argument('--encoder_tau', default=0.05, type=float)
@@ -73,7 +71,6 @@ def parse_args():
     #parser.add_argument('--save_buffer', default=False, action='store_true')
     parser.add_argument('--save_model_freq', default=5000, type=int)
     parser.add_argument('--load_model', default=-1, type=int)
-    #parser.add_argument('--save_video', default=False, action='store_true')
     parser.add_argument('--device', default='', type=str)
     parser.add_argument('--lock', default=False, action='store_true')
     args = parser.parse_args()
@@ -151,7 +148,7 @@ def main():
         # initialize processes in 'spawn' mode, required by CUDA runtime
         ctx = mp.get_context('spawn')
 
-        MAX_QSIZE = 10
+        MAX_QSIZE = 2
         input_queue = ctx.Queue(MAX_QSIZE)
         output_queue = ctx.Queue(MAX_QSIZE)
         tensor_queue = ctx.Queue(MAX_QSIZE)
@@ -239,12 +236,13 @@ def main():
         episode_step += 1
 
         # Terminate all threads and processes once done
-        if step == args.env_step + 1 + args.init_step  and args.async:
+        if step == args.env_step + args.init_step  and args.async:
             stop = True
             stat_recv_thread.join()
             replay_buffer_process.terminate()
             update_process.terminate()
-
+    # Terminate environment processes
+    env.terminate()
 
 if __name__ == '__main__':
     main()

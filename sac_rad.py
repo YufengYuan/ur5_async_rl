@@ -71,7 +71,6 @@ class SacRadAgent:
 
         # optimizers
         self.init_optimizers()
-        self._huber_loss = torch.nn.SmoothL1Loss()
         self.train()
         self.critic_target.train()
 
@@ -141,12 +140,12 @@ class SacRadAgent:
         # TODO: whether we need to scale the critic loss by 2?
         critic_loss = torch.mean(
             (current_Q1 - target_Q) ** 2 * not_done + (current_Q2 - target_Q) ** 2 * not_done
-             #(current_Q1 - target_Q) ** 2 + (current_Q2 - target_Q) ** 2
-        ) / 2
+            #(current_Q1 - target_Q) ** 2 + (current_Q2 - target_Q) ** 2
+        )
         # Optimize the critic
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 10)
+        #torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1)
         self.critic_optimizer.step()
 
         critic_stats = {
@@ -189,7 +188,6 @@ class SacRadAgent:
 
     def update(self, obs, state, action, reward, next_obs, next_state, not_done):
         # regular update of SAC_RAD, sequentially augment data and train
-        #obs, state, action, reward, next_obs, next_state, not_done = replay_buffer.sample()
         stats = self.update_critic(obs, state, action, reward, next_obs, next_state, not_done)
         if self.num_updates % self.actor_update_freq == 0:
             actor_stats = self.update_actor_and_alpha(obs, state)
@@ -206,20 +204,6 @@ class SacRadAgent:
                 output_queue.put(self.update(*tensor_queue.get()))
                 if sync_queue is not None:
                     sync_queue.put(1)
-
-    # TODO: merge 'async_update' and 'update'
-    #def async_update(self, obs, state, action, reward, next_obs, next_state, not_done):
-    #    # asynchronously update actor critic on another process
-    #    stats = self.update_critic(obs, state, action, reward, next_obs, next_state, not_done)
-    #    if self.num_updates % self.actor_update_freq == 0:
-    #        actor_stats = self.update_actor_and_alpha(obs, state)
-    #        stats = {**stats, **actor_stats}
-    #    if self.num_updates % self.critic_target_update_freq == 0:
-    #        self.soft_update_target()
-    #    stats['train/batch_reward'] = reward.mean().item()
-    #    stats['train/num_updates'] = self.num_updates
-    #    self.num_updates += 1
-    #    return stats
 
     def soft_update_target(self):
         utils.soft_update_params(

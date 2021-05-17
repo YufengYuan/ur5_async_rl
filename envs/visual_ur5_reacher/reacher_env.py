@@ -345,7 +345,7 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
 
         self._pstop_unlock_packet = np.zeros(self._actuator_comms['UR5'].actuator_buffer.array_len)
         self._pstop_unlock_packet[0] = ur_utils.COMMANDS['UNLOCK_PSTOP']['id']
-
+        self.previous_reward = 0
         # Make sure all communicatators are ready
         time.sleep(2)
         # self.info['reward_dist'] = 0
@@ -827,17 +827,16 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             reward_x = 1 / 2  - np.abs(xs - int(size_x / 2)) / size_x
             reward_y = 1 / 2 - np.abs(ys - int(size_y / 2)) / size_y
             reward = np.sum(reward_x * reward_y) / self._image_width / self._image_height
-            #reward = np.sum(reward_x + reward_y) / self._image_width / self._image_height
-            reward = reward * 1000
         else:
             reward = 0
+        reward *= 800
+        reward = np.clip(reward, 0, 5)
 
         '''
         When the joint 4 is perpendicular to the mounting ground:
             joint 0 + joint 4 == 0
             joint 1 + joint 2 + joint 3 == -pi
         '''
-        #scale = 1 - 2 * (np.abs(joint[0] + joint[4]) + np.abs(np.pi + np.sum(joint[1:4]))) / np.pi
         scale = (np.abs(joint[0] + joint[4]) + np.abs(np.pi + np.sum(joint[1:4])))
         return reward - scale
 

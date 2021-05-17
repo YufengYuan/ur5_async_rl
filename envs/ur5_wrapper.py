@@ -117,6 +117,8 @@ class UR5Wrapper():
         else:
             return obs_dict['image'], obs_dict['joint']
 
+    def terminate(self):
+        self.env.terminate()
 
 if __name__ == '__main__':
     pass
