@@ -10,3 +10,5 @@ results/
 img_training.png
 *_test.py
 test.py
+*.png
+*.out

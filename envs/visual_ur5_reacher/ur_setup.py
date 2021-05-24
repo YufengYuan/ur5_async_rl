@@ -113,27 +113,27 @@ setups = {
                   'host': '192.168.2.152',  # put UR5 Controller address here
                   #'end_effector_low': np.array([-0.3, -0.6, 0.5]),
                   #'end_effector_high': np.array([0.2, 0.4, 1.0]),
-                  'end_effector_low': np.array([-0.35, 0.10, 0.10]),
-                  'end_effector_high': np.array([0.35, 0.8, 0.8]),
+                  'end_effector_low': np.array([-0.4, 0.1, 0.1]),
+                  'end_effector_high': np.array([0.4, 0.8, 0.8]),
                   'angles_low':np.pi/180 * np.array(
-                      [ 50,
-                       -180,#-180
-                       -150,
-                       -250,
-                        -120,
+                      [ 55,
+                       -120,#-180
+                       -0,
+                       -215,
+                        -135,
                         50
                        ]
                   ),
                   'angles_high':np.pi/180 * np.array(
-                      [ 130,
-                       -0,
-                        180,
-                        -110,
-                        -30,
+                      [ 125,
+                       -30,
+                        135,
+                        -135,
+                        -45,
                         190
                        ]
                   ),
-                  'speed_max': 0.5,   # maximum joint speed magnitude using speedj
+                  'speed_max': 0.7,   # maximum joint speed magnitude using speedj
                   'accel_max': 1,      # maximum acceleration magnitude of the leading axis using speedj
                   'reset_speed_limit': 0.5,
                   #'q_ref': np.array([ 1.58724391, -2.0, 2.1, -3.01790582, -1.63685572, 3.1415926]),

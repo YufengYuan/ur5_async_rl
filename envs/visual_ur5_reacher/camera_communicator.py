@@ -7,14 +7,16 @@ import logging
 import cv2 as cv
 import numpy as np
 from senseact.communicator import Communicator
-
+import time
+DEFAULT_WIDTH  = 640
+DEFAULT_HEIGHT = 360
 
 class CameraCommunicator(Communicator):
     """
     Camera Communicator for interfacing with most common webcams supported by OpenCV.
     """
 
-    def __init__(self, res=(0, 0), device_id=0):
+    def __init__(self, res=(DEFAULT_WIDTH, DEFAULT_HEIGHT), device_id=0):
         """Inits the camera communicator with desired resolution and device_id.
 
         Args:
@@ -70,10 +72,10 @@ class CameraCommunicator(Communicator):
         if not self._cap.isOpened():
             raise IOError("Unable to open camera on device id {}".format(self._device_id))
 
-        self._cap.set(cv.CAP_PROP_FPS, 60)
+        self._cap.set(cv.CAP_PROP_FPS, 30)
+        #self._cap.set(cv.CAP_PROP_FOURCC, cv.VideoWriter.fourcc('m', 'j', 'p', 'g'))
         self._cap.set(cv.CAP_PROP_FRAME_WIDTH, self._res[0])
         self._cap.set(cv.CAP_PROP_FRAME_HEIGHT, self._res[1])
-        #self._cap.set(cv.CAP_PROP_BUFFERSIZE, 1)
         # main process loop
         super(CameraCommunicator, self).run()
 
@@ -84,7 +86,6 @@ class CameraCommunicator(Communicator):
         #import time
         """Block and read the next available frame."""
         # reading the original frame in (height, width, depth) dimension
-        #t  = time.time()
         retval, frame = self._cap.read()
         #frame = np.rot90(frame, k=2)
         if retval:

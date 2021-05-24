@@ -16,7 +16,7 @@ from envs.visual_ur5_reacher.ur_setup import setups
 from senseact.sharedbuffer import SharedBuffer
 from senseact import utils
 import cv2 as cv
-from envs.visual_ur5_reacher.camera_communicator import CameraCommunicator
+from envs.visual_ur5_reacher.camera_communicator import CameraCommunicator, DEFAULT_HEIGHT, DEFAULT_WIDTH
 from envs.visual_ur5_reacher.monitor_communicator import MonitorCommunicator
 
 class ReacherEnv(RTRLBaseEnv, gym.core.Env):
@@ -129,7 +129,7 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         assert control_type in ['position', 'velocity', 'acceleration']
         assert derivative_type in ['none', 'first', 'second']
 
-        assert target_type in ['static', 'reacher', 'tracker']
+        assert target_type in ['static', 'reaching', 'tracking']
         assert reset_type in ['random', 'zero', 'none']
         assert actuation_sync_period >= 0
 
@@ -267,7 +267,8 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
                                     },
                                 'Camera': {
                                     'num_sensor_packets': image_history,
-                                    'kwargs': {'res': (image_width, image_height), 'device_id': camera_id}
+                                    #'kwargs': {'res': (image_width, image_height), 'device_id': camera_id}
+                                    'kwargs': {'device_id': camera_id}
                                     },
                                 'Monitor': {
                                     'kwargs': {'target_type': target_type}
@@ -303,7 +304,8 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
 
         self._image_buffer = SharedBuffer(
             buffer_len=SharedBuffer.DEFAULT_BUFFER_LEN,
-            array_len=int(np.product(self._observation_space['image'].shape)) ,
+            #array_len=int(np.product(self._observation_space['image'].shape)) ,
+            array_len=int(DEFAULT_WIDTH * DEFAULT_HEIGHT * 3 * self._image_history),
             array_type='H',
             np_array_type='H',
         )
@@ -443,12 +445,15 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             image_sensation, image_timestamp, _ = self._image_buffer.read_update()
         # reshape flattened images
         images = []
-        image_length = self._image_width * self._image_height * 3
+        #image_length = self._image_width * self._image_height * 3
+        image_length = DEFAULT_WIDTH * DEFAULT_HEIGHT * 3
         for i in range(self._image_history):
-            images.append(image_sensation[0][i * image_length : (i + 1) * image_length].reshape(self._image_height, self._image_width, 3))
+            images.append(image_sensation[0][i * image_length : (i + 1) * image_length].reshape(DEFAULT_HEIGHT, DEFAULT_WIDTH, 3))
         image_sensation = np.concatenate(images, axis=-1).astype(np.uint8)
-        done = self._check_done()
+        # TODO: add assert here
+        image_sensation = image_sensation[::DEFAULT_HEIGHT // self._image_height, ::DEFAULT_WIDTH // self._image_width, :]
         reward = self._compute_reward_(image_sensation, joint_sensation[0][self._joint_indices])
+        done = self._check_done()
         if self._channel_first:
             image_sensation = np.rollaxis(image_sensation, 2, 0)
         return {'image': image_sensation, 'joint': joint_sensation[0]}, reward, done
@@ -830,7 +835,7 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         else:
             reward = 0
         reward *= 800
-        reward = np.clip(reward, 0, 5)
+        reward = np.clip(reward, 0, 4)
 
         '''
         When the joint 4 is perpendicular to the mounting ground:

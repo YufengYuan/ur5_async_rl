@@ -10,7 +10,7 @@ from senseact.sharedbuffer import SharedBuffer
 
 class MonitorCommunicator(Communicator):
 
-    def __init__(self, target_type='reacher', width=160, height=90, radius=7):
+    def __init__(self, target_type='reaching', width=160, height=90, radius=7):
         mpl.rcParams['toolbar'] = 'None'
         plt.ion()
         self.fig = plt.figure()
@@ -43,14 +43,14 @@ class MonitorCommunicator(Communicator):
         if self.target_type == 'static':
             self.target.set_center((self.width / 2, self.height / 2))
             self.velocity_x, self.velocity_y = 0, 0
-        if self.target_type == 'reacher':
+        if self.target_type == 'reaching':
             x, y = np.random.random(2)
             self.target.set_center(
                 (self.radius + x * (self.width - 2 * self.radius),
                  self.radius + y * (self.height - 2 * self.radius))
             )
             self.velocity_x, self.velocity_y = 0, 0
-        elif self.target_type == 'tracker':
+        elif self.target_type == 'tracking':
             #x, y = np.random.random(2)
             #self.target.set_center(
             #    (self.radius + x * (self.width - 2 * self.radius),
@@ -80,10 +80,9 @@ class MonitorCommunicator(Communicator):
            y + self.velocity_y - self.radius < 0:
             self.velocity_y = -self.velocity_y
         self.target.set_center((x + self.velocity_x, y + self.velocity_y))
-        time.sleep(0.032)
-        #self.fig.canvas.toolbar.pack_forget()
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
+        time.sleep(0.032)
 
 
 if __name__ == '__main__':
