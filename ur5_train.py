@@ -34,7 +34,7 @@ def parse_args():
     # train
     parser.add_argument('--init_step', default=1000, type=int)
     parser.add_argument('--env_step', default=100000, type=int)
-    parser.add_argument('--batch_size', default=256, type=int)
+    parser.add_argument('--batch_size', default=128, type=int)
     parser.add_argument('--async', default=False, action='store_true')
     parser.add_argument('--max_update_freq', default=10, type=int)
     # critic
@@ -93,8 +93,6 @@ def main():
                      f'dt={args.dt}_bs={args.batch_size}_' \
                      f'dim={args.image_width}*{args.image_height}_{args.seed}/'
     utils.make_dir(args.work_dir)
-    print(args.work_dir)
-    #video_dir = utils.make_dir(os.path.join(args.work_dir, 'video'))
     model_dir = utils.make_dir(os.path.join(args.work_dir, 'model'))
     buffer_dir = utils.make_dir(os.path.join(args.work_dir, 'buffer'))
 
@@ -129,7 +127,6 @@ def main():
 
     if args.async:
         agent.share_memory()
-
         # easily transfer step information to 'async_recv_data'
         def recv_from_update(buffer_queue, L, stop):
             while True:
@@ -138,11 +135,10 @@ def main():
                 stat_dict = buffer_queue.get()
                 for k, v in stat_dict.items():
                     L.log(k, v, step)
-
         # initialize processes in 'spawn' mode, required by CUDA runtime
         ctx = mp.get_context('spawn')
 
-        MAX_QSIZE = 2
+        MAX_QSIZE = 3
         input_queue = ctx.Queue(MAX_QSIZE)
         output_queue = ctx.Queue(MAX_QSIZE)
         tensor_queue = ctx.Queue(MAX_QSIZE)
@@ -193,20 +189,6 @@ def main():
     start_time = time.time()
     obs, state = env.reset()
     for step in range(args.env_step + 1 + args.init_step):
-        if done and step > 0:
-            L.log('train/duration', time.time() - start_time, step)
-            L.log('train/episode_reward', episode_reward, step)
-            start_time = time.time()
-            L.dump(step)
-            obs, state = env.reset()
-            done = False
-            episode_reward = 0
-            episode_step = 0
-            episode += 1
-            L.log('train/episode', episode, step)
-            if args.save_model and step > 0 and step % args.save_model_freq == 0:
-                agent.save(model_dir, step)
-
         # sample action for data collection
         if step < args.init_step:
             if step % args.random_action_repeat == 0:
@@ -231,6 +213,19 @@ def main():
         state = next_state
         episode_step += 1
 
+        if done and step > 0:
+            L.log('train/duration', time.time() - start_time, step)
+            L.log('train/episode_reward', episode_reward, step)
+            start_time = time.time()
+            L.dump(step)
+            obs, state = env.reset()
+            done = False
+            episode_reward = 0
+            episode_step = 0
+            episode += 1
+            L.log('train/episode', episode, step)
+            if args.save_model and step > 0 and step % args.save_model_freq == 0:
+                agent.save(model_dir, step)
         # Terminate all threads and processes once done
         if step == args.env_step + args.init_step  and args.async:
             stop = True

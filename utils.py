@@ -178,62 +178,6 @@ class RadReplayBuffer(object):
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         return obses, states, actions, rewards, next_obses, next_states, not_dones
 
-    #def sample_numpy(self):
-    #    idxs = np.random.randint(
-    #        0, self.capacity if self.full else self.idx, size=self.batch_size
-    #    )
-    #    if self.ignore_obs:
-    #        obses = None
-    #        next_obses = None
-    #    else:
-    #        obses = self.obses[idxs]
-    #        next_obses = self.next_obses[idxs]
-    #    if self.ignore_state:
-    #        states = None
-    #        next_states = None
-    #    else:
-    #        states = self.states[idxs]
-    #        next_states = self.next_states[idxs]
-    #    actions = self.actions[idxs]
-    #    rewards = self.rewards[idxs]
-    #    not_dones = self.not_dones[idxs]
-    #    return obses, states, actions, rewards, next_obses, next_states, not_dones
-
-
-    def save(self, save_dir):
-        if self.idx == self.last_save:
-            return
-        path = os.path.join(save_dir, '%d_%d.pt' % (self.last_save, self.idx))
-        payload = [
-            self.obses[self.last_save:self.idx],
-            self.states[self.last_save:self.idx],
-            self.next_obses[self.last_save:self.idx],
-            self.next_states[self.last_save:self.idx],
-            self.actions[self.last_save:self.idx],
-            self.rewards[self.last_save:self.idx],
-            self.not_dones[self.last_save:self.idx]
-        ]
-        self.last_save = self.idx
-        torch.save(payload, path)
-
-
-
-    def load(self, save_dir):
-        chunks = os.listdir(save_dir)
-        chucks = sorted(chunks, key=lambda x: int(x.split('_')[0]))
-        for chunk in chucks:
-            start, end = [int(x) for x in chunk.split('.')[0].split('_')]
-            path = os.path.join(save_dir, chunk)
-            payload = torch.load(path)
-            assert self.idx == start
-            self.obses[start:end] = payload[0]
-            self.states[start:end] = payload[1]
-            self.next_obses[start:end] = payload[2]
-            self.next_states[start:end] = payload[3]
-            self.actions[start:end] = payload[4]
-            self.rewards[start:end] = payload[5]
-            self.not_dones[start:end] = payload[6]
-            self.idx = end
 import time
 import threading
 import cv2 as cv
@@ -271,6 +215,41 @@ class AsyncRadReplayBuffer(RadReplayBuffer):
                 self.output_queue.put(tuple(self.sample()))
                 self._send_counter += 1
 
+
+    def save(self, save_dir):
+        if self.idx == self.last_save:
+            return
+        path = os.path.join(save_dir, '%d_%d.pt' % (self.last_save, self.idx))
+        payload = [
+            self.obses[self.last_save:self.idx],
+            self.states[self.last_save:self.idx],
+            self.next_obses[self.last_save:self.idx],
+            self.next_states[self.last_save:self.idx],
+            self.actions[self.last_save:self.idx],
+            self.rewards[self.last_save:self.idx],
+            self.not_dones[self.last_save:self.idx]
+        ]
+        self.last_save = self.idx
+        torch.save(payload, path)
+
+
+
+    def load(self, save_dir):
+        chunks = os.listdir(save_dir)
+        chucks = sorted(chunks, key=lambda x: int(x.split('_')[0]))
+        for chunk in chucks:
+            start, end = [int(x) for x in chunk.split('.')[0].split('_')]
+            path = os.path.join(save_dir, chunk)
+            payload = torch.load(path)
+            assert self.idx == start
+            self.obses[start:end] = payload[0]
+            self.states[start:end] = payload[1]
+            self.next_obses[start:end] = payload[2]
+            self.next_states[start:end] = payload[3]
+            self.actions[start:end] = payload[4]
+            self.rewards[start:end] = payload[5]
+            self.not_dones[start:end] = payload[6]
+            self.idx = end
 
 class FrameStack(gym.Wrapper):
     def __init__(self, env, k):

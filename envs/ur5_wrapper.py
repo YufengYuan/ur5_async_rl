@@ -6,11 +6,8 @@ import cv2
 import matplotlib.pyplot as plt
 from multiprocessing import Process, Value, Manager
 import gym
-#from senseact.envs.ur.reacher_env import ReacherEnv
-#from visual_reacher_env import VisualReacherEnv as ReacherEnv
 from envs.visual_ur5_reacher.reacher_env import ReacherEnv
 from senseact.utils import tf_set_seeds, NormalizedEnv
-#from helper import create_callback
 import argparse
 import multiprocessing as mp
 

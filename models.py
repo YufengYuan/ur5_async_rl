@@ -4,15 +4,6 @@ from torch import nn
 import torch.nn.functional as F
 import copy
 
-
-#def weight_init(m):
-#    """Kaiming_normal is standard for relu networks, sometimes."""
-#    if isinstance(m, (torch.nn.Linear, torch.nn.Conv2d)):
-#        torch.nn.init.kaiming_normal_(m.weight, mode="fan_in",
-#            nonlinearity="relu")
-#        if m.bias is not None:
-#            torch.nn.init.zeros_(m.bias)
-
 def weight_init(m):
     """Custom weight init for Conv2D and Linear layers."""
     if isinstance(m, nn.Linear):

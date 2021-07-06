@@ -13,3 +13,10 @@ test.py
 *.png
 *.out
 imgs
+ur5_eval.py
+dmc_train.py
+configs/dmc_config.py
+envs/dmc_wrapper.py
+.vscode/
+.DS_store
+instructions.md

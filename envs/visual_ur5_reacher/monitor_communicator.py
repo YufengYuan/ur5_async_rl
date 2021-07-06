@@ -51,11 +51,6 @@ class MonitorCommunicator(Communicator):
             )
             self.velocity_x, self.velocity_y = 0, 0
         elif self.target_type == 'tracking':
-            #x, y = np.random.random(2)
-            #self.target.set_center(
-            #    (self.radius + x * (self.width - 2 * self.radius),
-            #     self.radius + y * (self.height - 2 * self.radius))
-            #)
             self.target.set_center((self.width / 2, self.height / 2))
             self.velocity_x, self.velocity_y = np.random.random(2) - 0.5
             velocity = np.sqrt(self.velocity_x ** 2 + self.velocity_y ** 2)
@@ -66,7 +61,7 @@ class MonitorCommunicator(Communicator):
         super(MonitorCommunicator, self).run()
 
     def _sensor_handler(self):
-        raise NotImplementedError('fsf')
+        raise NotImplementedError()
 
     def _actuator_handler(self):
         if self.actuator_buffer.updated():
