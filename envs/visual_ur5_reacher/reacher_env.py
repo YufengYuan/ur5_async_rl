@@ -11,7 +11,6 @@ from multiprocessing import Array, Value
 
 from senseact.rtrl_base_env import RTRLBaseEnv
 from senseact.devices.ur import ur_utils
-#from senseact.devices.ur.ur_setups import setups
 from envs.visual_ur5_reacher.ur_setup import setups
 from senseact.sharedbuffer import SharedBuffer
 from senseact import utils
@@ -20,17 +19,7 @@ from envs.visual_ur5_reacher.camera_communicator import CameraCommunicator, DEFA
 from envs.visual_ur5_reacher.monitor_communicator import MonitorCommunicator
 
 class ReacherEnv(RTRLBaseEnv, gym.core.Env):
-    """A class implementing UR5 Reacher2D and Reacher6D environments.
-
-    A UR5 reacher task consists in reaching with an arm end-effector a given
-    location in Cartesian space using low level UR5 joint control commands.
-    The class implements a fixed duration episodic reacher task where the target is
-    generated randomly at the beginning of each episode. The class implements
-    both, position and velocity control. For each of those it implements direct,
-    first and second derivative control. The class implements safety boundaries
-    handling defined as a box in a Cartesian space. The class also implements reset
-    function, which moves the arm into a predefined initial position at the end
-    of each episode and generates a random target.
+    """A class implementing Visual-UR5 Reaching and tracking environments.
     """
     def __init__(self,
                  setup,
@@ -79,12 +68,10 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             derivative_type: a string specifying what type of derivative
                 control to use, either "none", "first" or "seconds"
             target_type: a string specifying in what space to provide
-                target coordinates, either "position" for Cartesian space
-                or "angle" for joints angles space.
+                target coordinates, either "reacher" for reaching
+                or "tracker" for tracking.
             reset_type: a string specifying whether to reset the arm to a
                 fixed position or to a random position.
-            reward_type: a string specifying the reward function, either
-                "linear" for - d_t, or "precision" for  - d_t + exp^( - d_t^2)
             deriv_action_max: a float specifying maximum value of an action
                 for derivative control
             first_deriv_max: a float specifying maximum value of a first
@@ -168,7 +155,6 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             accel_max = setups[setup]['accel_max']
         if speed_max==None:
             speed_max = setups[setup]['speed_max']
-        # TODO: specify self._dof == 5
         if self._dof == 5:
             self._joint_indices = [0, 1, 2, 3, 4]
             self._end_effector_indices = [0, 1, 2]
@@ -234,13 +220,11 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             low=np.array(
                 list(self._angles_low * self._joint_history)  # q_actual
                 + list(-np.ones(self._dof * self._joint_history))  # qd_actual
-                #+ list(self._target_low)  # target
                 + list(-self._action_low)  # previous action in cont space
             ),
             high=np.array(
                 list(self._angles_high * self._joint_history)  # q_actual
                 + list(np.ones(self._dof * self._joint_history))  # qd_actual
-                #+ list(self._target_high)  # target
                 + list(self._action_high)    # previous action in cont space
             )
         )
@@ -296,6 +280,7 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             image_space = gym.spaces.Box(low=0., high=255.,
                                      shape=[image_height, image_width, 3 * image_history],
                                      dtype=np.uint8)
+
         self._observation_space = gym.spaces.Dict({
             'joint': self._observation_space,
             'image': image_space
@@ -304,7 +289,6 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
 
         self._image_buffer = SharedBuffer(
             buffer_len=SharedBuffer.DEFAULT_BUFFER_LEN,
-            #array_len=int(np.product(self._observation_space['image'].shape)) ,
             array_len=int(DEFAULT_WIDTH * DEFAULT_HEIGHT * 3 * self._image_history),
             array_type='H',
             np_array_type='H',
@@ -350,8 +334,6 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         self.previous_reward = 0
         # Make sure all communicatators are ready
         time.sleep(2)
-        # self.info['reward_dist'] = 0
-        # self.info['reward_vel'] = 0
 
     def _reset_(self):
         """Resets the environment episode.
@@ -362,11 +344,6 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         print("Resetting")
         self._actuator_comms['Monitor'].actuator_buffer.write(0)
         self._q_target_, x_target = self._pick_random_angles_()
-        #np.copyto(self._x_target_, x_target)
-       # if self._target_type == 'position':
-       #     self._target_ = self._x_target_[self._end_effector_indices]
-       # elif self._target_type == 'angle':
-       #     self._target_ = self._q_target_
         self._action_ = self._rand_obj_.uniform(self._action_low, self._action_high)
         self._cmd_prev_ = np.zeros(len(self._action_low))  # to be used with derivative control of velocity
         if self._reset_type != 'none':
@@ -396,9 +373,6 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
 
     def _reset_arm(self, reset_angles):
         """Sends reset packet to communicator and sleeps until executed."""
-        #self._actuator_comms['UR5'].actuator_buffer.write(self._stopj_packet)
-        #time.sleep(0.5)
-
         self._reset_packet[1:1 + 6][self._joint_indices] = reset_angles
         self._actuator_comms['UR5'].actuator_buffer.write(self._reset_packet)
         time.sleep(max(self._reset_packet[-2] * 1.5, 2.0))
@@ -410,8 +384,6 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
     def _sensor_to_sensation_(self):
         """ Overwrite the original function to support image input
         """
-        #assert len(
-        #    self._sensor_comms.keys()) == 2, 'Number of sensors not equal to 2, not supported by current environment!'
         for name, comm in self._sensor_comms.items():
             if comm.sensor_buffer.updated():
                 sensor_window, timestamp_window, index_window = comm.sensor_buffer.read_update(
@@ -419,13 +391,9 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
                 if name == 'UR5':
                     s = self._compute_joint_(name, sensor_window, timestamp_window, index_window)
                     self._joint_buffer.write(s)
-                    #print(f'UR5    : {timestamp_window}')
                 elif name == 'Camera':
                     s = self._compute_image_(name, sensor_window, timestamp_window, index_window)
-                    #print(f'Camera : {timestamp_window}')
                     self._image_buffer.write(s)
-                #elif name == 'Monitor':
-                #    raise NotImplementedError()
                 else:
                     raise NotImplementedError()
 
@@ -445,19 +413,16 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             image_sensation, image_timestamp, _ = self._image_buffer.read_update()
         # reshape flattened images
         images = []
-        #image_length = self._image_width * self._image_height * 3
         image_length = DEFAULT_WIDTH * DEFAULT_HEIGHT * 3
         for i in range(self._image_history):
             images.append(image_sensation[0][i * image_length : (i + 1) * image_length].reshape(DEFAULT_HEIGHT, DEFAULT_WIDTH, 3))
         image_sensation = np.concatenate(images, axis=-1).astype(np.uint8)
-        # TODO: add assert here
         image_sensation = image_sensation[::DEFAULT_HEIGHT // self._image_height, ::DEFAULT_WIDTH // self._image_width, :]
         reward = self._compute_reward_(image_sensation, joint_sensation[0][self._joint_indices])
         done = self._check_done()
         if self._channel_first:
             image_sensation = np.rollaxis(image_sensation, 2, 0)
         return {'image': image_sensation, 'joint': joint_sensation[0]}, reward, done
-        #return (image_sensation, joint_sensation), reward, done
 
     def _compute_image_(self, name, sensor_window, timestamp_window, index_window):
         index_end = len(sensor_window)
@@ -505,34 +470,9 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         self._voltage_ = np.array([sensor_window[i]['v_actual'][0] for i in range(index_start,index_end)])
 
         self._safety_mode_ = np.array([sensor_window[i]['safety_mode'][0] for i in range(index_start,index_end)])
-
-        #TODO: should there be checks for safety modes greater than pstop here, and exit if found?
-
-        # Compute end effector position
-        #x = ur_utils.forward(sensor_window[-1]['q_actual'][0], self._ik_params)[:3, 3]
-        #np.copyto(self._x_, x)
-
-        #if self._target_type == 'position':
-        #    self._target_diff_ = self._x_[self._end_effector_indices] - self._target_
-        #elif self._target_type == 'angle':
-        #    self._target_diff_ = self._q_[-1, self._joint_indices] - self._target_
-
-        #self._reward_.value = self._compute_reward_()
-        #if self._reward_type == "sparse":
-        #    done = self._reward_.value >= 0
-        #else:
-        #    done = 0
-        # TODO: use the correct obs that matches the observation_space
-
-        #time_dif = time.time() - timestamp_window[-1]
-        #if time_dif > 0.001:
-        #    print(f'Warning: Proprioception received is delayed by: {time_dif}!')
         return np.concatenate((self._q_[:, self._joint_indices].flatten(),
                                self._qd_[:, self._joint_indices].flatten() / self._speed_high,
-                               #self._target_diff_,
                                self._action_ / self._action_high,))
-                               #[self._reward_.value],
-                               #[done]))
 
     def _compute_actuation_(self, action, timestamp, index):
         """Creates and sends actuation packets to the communicator.
@@ -683,9 +623,6 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         # follows from kinematics equations.
         accel_to_apply = np.max(np.abs(self._qd_)) * self.init_boundary_speed / 0.05
 
-        # self.boundary_packet[1:1 + 6][self.joint_indices] = self.return_point
-        # self.actuator_comms['UR5'].actuator_buffer.write(self.reset_packet)
-        # time.sleep(1.0)
         self._speedj_packet[-2] = np.clip(accel_to_apply, 2.0, 5.0)
         self._actuation_packet_['UR5'] = self._speedj_packet
         self._cmd_.fill(0.0)
@@ -702,9 +639,6 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         inside_bound, inside_buffer_bound, mat, xyz = self._check_bound(self._qt_[-1])
         inside_angle_bound = np.all(self._angles_low <= self._qt_[-1, self._joint_indices]) and \
                              np.all(self._qt_[-1, self._joint_indices] <= self._angles_high)
-        #print(self._angles_low)
-        #print(self._qt_[-1, self._joint_indices])
-        #print(self._angles_high)
         if inside_bound:
             self.return_point = None
             self.escaped_the_box = False
@@ -746,9 +680,6 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
             # follows from kinematics equations.
             accel_to_apply = np.max(np.abs(self._qd_)) * self.init_boundary_speed / 0.05
 
-            # self.boundary_packet[1:1 + 6][self.joint_indices] = self.return_point
-            # self.actuator_comms['UR5'].actuator_buffer.write(self.reset_packet)
-            # time.sleep(1.0)
             self._speedj_packet[-2] = np.clip(accel_to_apply, 2.0, 5.0)
             self._actuation_packet_['UR5'] = self._speedj_packet
             self._cmd_.fill(0.0)
@@ -824,7 +755,6 @@ class ReacherEnv(RTRLBaseEnv, gym.core.Env):
         upper = np.array(upper, dtype="uint8")
 
         mask = cv.inRange(image, lower, upper)
-        # print(mask[395:405, 365:375])
         size_x, size_y = mask.shape
         # reward for reaching task, may not be suitable for tracking
         if 255 in mask:

@@ -137,7 +137,6 @@ class SacRadAgent:
         current_Q1, current_Q2 = self.critic(obs, state, action, detach_encoder=False)
 
         # Ignore terminal transitions to enable infinite bootstrap
-        # TODO: whether we need to scale the critic loss by 2?
         critic_loss = torch.mean(
             (current_Q1 - target_Q) ** 2 * not_done + (current_Q2 - target_Q) ** 2 * not_done
             #(current_Q1 - target_Q) ** 2 + (current_Q2 - target_Q) ** 2

@@ -72,8 +72,7 @@ class CameraCommunicator(Communicator):
         if not self._cap.isOpened():
             raise IOError("Unable to open camera on device id {}".format(self._device_id))
 
-        self._cap.set(cv.CAP_PROP_FPS, 30)
-        #self._cap.set(cv.CAP_PROP_FOURCC, cv.VideoWriter.fourcc('m', 'j', 'p', 'g'))
+        self._cap.set(cv.CAP_PROP_FPS, 25)
         self._cap.set(cv.CAP_PROP_FRAME_WIDTH, self._res[0])
         self._cap.set(cv.CAP_PROP_FRAME_HEIGHT, self._res[1])
         # main process loop
@@ -83,11 +82,8 @@ class CameraCommunicator(Communicator):
         self._cap.release()
 
     def _sensor_handler(self):
-        #import time
         """Block and read the next available frame."""
-        # reading the original frame in (height, width, depth) dimension
         retval, frame = self._cap.read()
-        #frame = np.rot90(frame, k=2)
         if retval:
             # flatten and write to buffer
             self.sensor_buffer.write(frame.flatten())
